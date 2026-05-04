@@ -191,11 +191,15 @@ async def _handle_youtube(interaction, url, session, github, knowledge, claude):
     knowledge_ctx = build_knowledge_context(related) if related else ""
 
     method_label = "字幕" if result.method == "api" else "Whisper書き起こし"
+    channel_line = f"**チャンネル:** {result.channel}" if result.channel else ""
+    channel_url_line = f"**チャンネルURL:** {result.channel_url}" if result.channel_url else ""
+    meta_lines = "\n".join(filter(None, [channel_line, channel_url_line]))
     user_message = (
         f"以下のYouTube動画の書き起こしを共有します。\n\n"
         f"**タイトル:** {result.title}\n"
         f"**URL:** {url}\n"
-        f"**言語:** {result.language} ({method_label})\n\n"
+        + (f"{meta_lines}\n" if meta_lines else "")
+        + f"**言語:** {result.language} ({method_label})\n\n"
         f"**書き起こし全文:**\n{result.transcript}"
     )
     assistant_text, _ = await claude.chat_with_tools(
@@ -313,7 +317,7 @@ def _default_article_template() -> str:
 def _default_youtube_template() -> str:
     return (
         "---\nid: {{note_id}}\ndate: {{date}}\ntype: literature/youtube\n"
-        "source: {{url}}\nchannel: {{channel}}\ntags: []\n---\n\n"
+        "source: {{url}}\nchannel: {{channel | default: \"不明\"}}\nchannel_url: {{channel_url | default: \"\"}}\ntags: []\n---\n\n"
         "# {{title}}\n\n## 要約\n\n{{summary}}\n\n"
         "## キーポイント\n\n{{key_points}}\n\n"
         "## 書き起こし抜粋\n\n{{excerpt}}\n\n"

@@ -13,6 +13,8 @@ class TranscriptResult:
     transcript: str
     language: str
     method: str  # "api" | "whisper" | "unavailable"
+    channel: str = ""
+    channel_url: str = ""
 
 
 _VIDEO_ID_RE = re.compile(
@@ -97,13 +99,15 @@ def _try_transcript_api(video_id: str, url: str) -> TranscriptResult | None:
         if not text.strip():
             return None
 
-        title = _fetch_video_title(video_id, url)
+        title, channel, channel_url = _fetch_video_metadata(video_id, url)
         return TranscriptResult(
             video_id=video_id,
             title=title,
             transcript=text,
             language=transcript.language_code,
             method="api",
+            channel=channel,
+            channel_url=channel_url,
         )
     except TranscriptsDisabled:
         print(f"[INFO] Transcripts disabled for {video_id}")
@@ -113,8 +117,8 @@ def _try_transcript_api(video_id: str, url: str) -> TranscriptResult | None:
         return None
 
 
-def _fetch_video_title(video_id: str, url: str) -> str:
-    """Get video title via yt-dlp metadata (no audio download)."""
+def _fetch_video_metadata(video_id: str, url: str) -> tuple[str, str, str]:
+    """Return (title, channel, channel_url) via yt-dlp metadata (no audio download)."""
     try:
         import yt_dlp
         opts: dict = {"quiet": True, "no_warnings": True}
@@ -123,9 +127,12 @@ def _fetch_video_title(video_id: str, url: str) -> str:
             opts["cookiefile"] = cookie_file
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
-            return info.get("title", f"YouTube: {video_id}")
+            title = info.get("title", f"YouTube: {video_id}")
+            channel = info.get("channel") or info.get("uploader") or ""
+            channel_url = info.get("channel_url") or info.get("uploader_url") or ""
+            return title, channel, channel_url
     except Exception:
-        return f"YouTube: {video_id}"
+        return f"YouTube: {video_id}", "", ""
 
 
 def _transcribe_with_whisper(video_id: str, url: str) -> TranscriptResult | None:
@@ -151,6 +158,8 @@ def _transcribe_with_whisper(video_id: str, url: str) -> TranscriptResult | None
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 title = info.get("title", f"YouTube: {video_id}")
+                channel = info.get("channel") or info.get("uploader") or ""
+                channel_url = info.get("channel_url") or info.get("uploader_url") or ""
 
             mp3_files = [f for f in os.listdir(tmpdir) if f.endswith(".mp3")]
             if not mp3_files:
@@ -168,6 +177,8 @@ def _transcribe_with_whisper(video_id: str, url: str) -> TranscriptResult | None
                 transcript=text,
                 language=info_whisper.language,
                 method="whisper",
+                channel=channel,
+                channel_url=channel_url,
             )
     except Exception as e:
         print(f"[WARN] Whisper transcription failed: {e}")
