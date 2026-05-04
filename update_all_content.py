@@ -168,7 +168,9 @@ id: {{note_id}}
 date: {{date}}
 type: fleeting
 source: discord/memo
+domain: []
 tags: []
+related_notes: []
 ---
 
 # {{title}}
@@ -181,13 +183,17 @@ tags: []
 
 {{key_points}}
 
+## 企画・制作への示唆
+
+{{insights}}
+
 ## アクションアイテム
 
 {{action_items}}
 
-## 原文
+## 会話ログ
 
-> {{raw_input}}
+{{conversation_log}}
 """
 
 TEMPLATE_ARTICLE = """\
@@ -197,26 +203,50 @@ date: {{date}}
 type: literature/article
 source: {{url}}
 author: {{author | default: "不明"}}
+domain: []
+platform: []
+ip: []
 tags: []
+related_notes: []
 ---
 
 # {{title}}
 
-## 要約
+## 概要
 
 {{summary}}
 
-## キーポイント
+## 重要ポイントと根拠
 
 {{key_points}}
+※ 数字・発言・事例・時系列を含めること。推測は「推測」と明記。
 
-## 重要な引用
+## 事実と主張の整理
 
-{{quotes}}
+{{facts_vs_claims}}
 
-## 個人的洞察
+## ファン心理・界隈構造
+
+{{fan_psychology}}
+※ 誰に刺さっているか、どの界隈で広がっているか、参加欲求・考察欲求との関係
+
+## 拡散導線
+
+{{distribution}}
+※ SNS・切り抜き・クリップ・ショート動画など
+
+## 企画・制作・運用への示唆
 
 {{insights}}
+※ 他IP・他事例への転用可能性を含む
+
+## リスク・懸念点
+
+{{risks}}
+
+## 要検証・不明点
+
+{{unknown}}
 
 ## ソース
 
@@ -232,31 +262,53 @@ type: literature/youtube
 source: {{url}}
 channel: {{channel | default: "不明"}}
 channel_url: {{channel_url | default: ""}}
+domain: []
+platform: YouTube
+ip: []
 tags: []
+related_notes: []
 ---
 
 # {{title}}
 
-## 要約
+## 概要
 
 {{summary}}
 
-## キーポイント
+## 重要ポイントと根拠
 
 {{key_points}}
 
-## 重要なトピック
+## 重要な発言・トピック
 
-{{topics}}
+{{key_statements}}
+※ 発言者・文脈・タイムスタンプ（取得できる場合）を含む
 
-## 個人的洞察
+## ファン心理・界隈構造
+
+{{fan_psychology}}
+
+## 拡散導線・切り抜き構造
+
+{{distribution}}
+
+## 企画・制作・運用への示唆
 
 {{insights}}
+
+## リスク・懸念点
+
+{{risks}}
+
+## 要検証・不明点
+
+{{unknown}}
 
 ## ソース
 
 - URL: {{url}}
-- 言語: {{language}}
+- チャンネル: {{channel}}
+- 取得日: {{date}}
 """
 
 TEMPLATE_RESEARCH = """\
@@ -265,7 +317,11 @@ id: {{note_id}}
 date: {{date}}
 type: research
 topic: {{topic}}
+domain: []
+platform: []
+ip: []
 tags: []
+related_notes: []
 ---
 
 # {{topic}}
@@ -274,13 +330,39 @@ tags: []
 
 {{overview}}
 
-## 主要な発見
+## 主要な発見（事実・根拠つき）
 
 {{key_findings}}
+※ 数字・事例・引用・発言者・時系列を含む
 
-## 考察と示唆
+## 界隈構造・ファン心理
 
-{{insights}}
+{{community_structure}}
+
+## 拡散導線・バズ構造
+
+{{viral_structure}}
+
+## マネタイズ・ビジネス構造
+
+{{business_model}}
+
+## 権利・ガイドライン・リスク
+
+{{rights_and_risks}}
+
+## 企画・制作への転用示唆
+
+{{production_insights}}
+
+## 競合・類似事例との比較
+
+{{comparison}}
+
+## 考察と仮説
+
+{{hypotheses}}
+※ 推測は「推測」と明記
 
 ## 次のアクション
 
@@ -289,7 +371,7 @@ tags: []
 ## 参照
 
 {{references}}
-<!-- 各参照を以下の形式で記載: - [タイトル](URL) — 概要一行 -->
+※ 形式: - [タイトル](URL) — 概要一行
 """
 
 TEMPLATE_PLANNING = """\
@@ -298,13 +380,16 @@ id: {{note_id}}
 date: {{date}}
 type: planning
 topic: {{topic}}
+project_type: []
+target_domain: []
 status: draft
 tags: []
+related_notes: []
 ---
 
 # {{topic}}
 
-## 目標
+## 目標と背景
 
 {{goal}}
 
@@ -312,9 +397,25 @@ tags: []
 
 {{current_state}}
 
-## プラン
+## 参照事例・競合分析
+
+{{reference_cases}}
+
+## プラン詳細
 
 {{plan}}
+
+## ターゲット・ファン心理
+
+{{target_audience}}
+
+## マネタイズ・収益構造
+
+{{monetization}}
+
+## 権利・ガイドライン確認事項
+
+{{rights_check}}
 
 ## リスクと対策
 
@@ -323,6 +424,41 @@ tags: []
 ## 次のステップ
 
 {{next_steps}}
+"""
+
+TEMPLATE_PERMANENT = """\
+---
+id: {{note_id}}
+date: {{date}}
+type: permanent
+title_statement: {{one_sentence_title}}
+domain: []
+tags: []
+related_notes: []
+source_notes: []
+---
+
+# {{title_statement}}
+
+## 主張
+
+{{core_idea}}
+
+## 根拠
+
+{{evidence}}
+
+## 文脈・背景
+
+{{context}}
+
+## 関連するアイデア・接続
+
+{{connections}}
+
+## 企画・制作への転用
+
+{{application}}
 """
 
 # ─────────────────────────────────────────────
@@ -417,7 +553,7 @@ USER_PROFILE = """\
 
 ### 2．重要ポイント
 
-特に重要な情報を箇条書きで整理する．  
+特に重要な情報を箇条書きで整理する．
 各ポイントには，根拠や背景も添える．
 
 ### 3．事実と根拠
@@ -426,7 +562,7 @@ USER_PROFILE = """\
 
 ### 4．主張と解釈
 
-原文が主張していること，またはそこから読み取れる構造を整理する．  
+原文が主張していること，またはそこから読み取れる構造を整理する．
 推測を含む場合は，必ず「推測」と明記する．
 
 ### 5．ファン心理・界隈構造
@@ -451,7 +587,7 @@ USER_PROFILE = """\
 
 ### 10．検証仮説
 
-今後検証すべき仮説を箇条書きで提示する．  
+今後検証すべき仮説を箇条書きで提示する．
 仮説は，できるだけ「何を見れば確認できるか」まで含める．
 """
 
@@ -469,12 +605,13 @@ files = {
     "_config/prompts/planning.md": (PLANNING_PROMPT, "update(config): conversational planning prompt"),
     "_config/prompts/chat.md": (CHAT_PROMPT, "update(config): conversational chat prompt"),
     "_config/prompts/permanent.md": (PERMANENT_PROMPT, "update(config): permanent note prompt"),
-    "_config/user-profile.md": (USER_PROFILE, "add(config): user profile template"),
-    "_templates/fleeting-note.md": (TEMPLATE_FLEETING, "update(templates): fleeting note"),
-    "_templates/literature-article.md": (TEMPLATE_ARTICLE, "update(templates): article"),
-    "_templates/literature-youtube.md": (TEMPLATE_YOUTUBE, "update(templates): youtube"),
-    "_templates/research.md": (TEMPLATE_RESEARCH, "add(templates): research note"),
-    "_templates/planning.md": (TEMPLATE_PLANNING, "add(templates): planning note"),
+    "_config/user-profile.md": (USER_PROFILE, "update(config): user profile"),
+    "_templates/fleeting-note.md": (TEMPLATE_FLEETING, "update(templates): fleeting note with domain/related_notes"),
+    "_templates/literature-article.md": (TEMPLATE_ARTICLE, "update(templates): article with domain/fan_psychology/distribution"),
+    "_templates/literature-youtube.md": (TEMPLATE_YOUTUBE, "update(templates): youtube with domain/key_statements/distribution"),
+    "_templates/research.md": (TEMPLATE_RESEARCH, "update(templates): research with community/viral/business structure"),
+    "_templates/planning.md": (TEMPLATE_PLANNING, "update(templates): planning with project_type/monetization/rights"),
+    "_templates/permanent-note.md": (TEMPLATE_PERMANENT, "add(templates): permanent note template"),
 }
 
 for path, (content, message) in files.items():
