@@ -30,14 +30,34 @@ def truncate_for_discord(text: str, max_chars: int = 1900) -> str:
     return text[:max_chars] + "\n…(truncated)"
 
 
+def strip_frontmatter(text: str) -> str:
+    """Remove YAML frontmatter block from the start of text."""
+    if text.startswith("---"):
+        end = text.find("\n---", 3)
+        if end != -1:
+            return text[end + 4:].strip()
+    return text
+
+
+def split_for_discord(text: str, max_chars: int = 1900) -> list[str]:
+    """Split text into chunks that fit within Discord's character limit."""
+    if len(text) <= max_chars:
+        return [text]
+    chunks: list[str] = []
+    while len(text) > max_chars:
+        split_at = text.rfind("\n", 0, max_chars)
+        if split_at <= 0:
+            split_at = max_chars
+        chunks.append(text[:split_at])
+        text = text[split_at:].lstrip("\n")
+    if text:
+        chunks.append(text)
+    return chunks
+
+
 def discord_preview(markdown: str, max_chars: int = 1800) -> str:
     """YAMLフロントマターを除去してDiscord向けに整形・切り詰める。"""
-    body = markdown
-    if markdown.startswith("---"):
-        end = markdown.find("\n---", 3)
-        if end != -1:
-            body = markdown[end + 4:].strip()
-    return truncate_for_discord(body, max_chars=max_chars)
+    return truncate_for_discord(strip_frontmatter(markdown), max_chars=max_chars)
 
 
 def inject_tags(content: str, tags: list[str]) -> str:

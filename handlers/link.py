@@ -11,14 +11,17 @@ from services.github_client import GitHubClient
 from services.knowledge_store import KnowledgeStore
 from services.scraper import fetch_article, ScrapeResult
 from services.youtube_client import get_transcript, TranscriptResult
-from utils.formatters import make_zk_filename, make_zk_id, sanitize_tags, discord_preview, inject_tags
+from utils.formatters import make_zk_filename, make_zk_id, sanitize_tags, inject_tags
 from utils.knowledge_ref import build_knowledge_context
+from utils.discord_utils import send_chunked
 import config
 
 YOUTUBE_RE = re.compile(
     r"(?:https?://)?(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)"
     r"[A-Za-z0-9_-]{11}"
 )
+
+_ARTICLE_TEXT_LIMIT = 30_000
 
 
 class PaywallView(ui.View):
@@ -204,9 +207,11 @@ async def _handle_youtube(interaction, url, session, github, knowledge, claude):
 
     session.pending_content = assistant_text
     view = LinkSaveView(github=github, knowledge=knowledge, claude=claude, channel_id=interaction.channel_id)
-    await interaction.followup.send(
-        f"📺 **{result.title}**\n\n{discord_preview(assistant_text)}\n\n"
-        "💬 続けて話しかけられます。[💾 保存] で会話をノートに整理します。",
+    await send_chunked(
+        interaction.followup,
+        assistant_text,
+        prefix=f"📺 **{result.title}**",
+        suffix="💬 続けて話しかけられます。[💾 保存] で会話をノートに整理します。",
         view=view,
     )
 
@@ -242,7 +247,7 @@ async def _handle_article(interaction, url, session, github, knowledge, claude):
         f"以下の記事を読みました。{page_info}\n\n"
         f"**タイトル:** {scrape.title}\n"
         f"**URL:** {url}\n\n"
-        f"**本文:**\n{scrape.text[:8000]}"
+        f"**本文:**\n{scrape.text[:_ARTICLE_TEXT_LIMIT]}"
     )
     assistant_text, _ = await claude.chat_with_tools(
         command="link",
@@ -253,9 +258,11 @@ async def _handle_article(interaction, url, session, github, knowledge, claude):
 
     session.pending_content = assistant_text
     view = LinkSaveView(github=github, knowledge=knowledge, claude=claude, channel_id=interaction.channel_id)
-    await interaction.followup.send(
-        f"📰 **{scrape.title}**{page_info}\n\n{discord_preview(assistant_text)}\n\n"
-        "💬 続けて話しかけられます。[💾 保存] で会話をノートに整理します。",
+    await send_chunked(
+        interaction.followup,
+        assistant_text,
+        prefix=f"📰 **{scrape.title}**{page_info}",
+        suffix="💬 続けて話しかけられます。[💾 保存] で会話をノートに整理します。",
         view=view,
     )
 
@@ -283,9 +290,10 @@ async def handle_link_followup(
 
     session.pending_content = assistant_text
     view = LinkSaveView(github=github, knowledge=knowledge, claude=claude, channel_id=message.channel.id)
-    await message.channel.send(
-        f"{discord_preview(assistant_text)}\n\n"
-        "💬 続けて話せます。[💾 保存] で整理します。",
+    await send_chunked(
+        message.channel,
+        assistant_text,
+        suffix="💬 続けて話せます。[💾 保存] で整理します。",
         view=view,
     )
 

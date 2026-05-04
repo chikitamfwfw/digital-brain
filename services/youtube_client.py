@@ -53,12 +53,31 @@ async def get_transcript(url: str) -> TranscriptResult:
     )
 
 
+def _build_requests_session_with_cookies() -> object | None:
+    """Return a requests.Session with cookies loaded from COOKIES_FILE, or None."""
+    cookie_file = os.getenv("COOKIES_FILE", "")
+    if not cookie_file or not os.path.exists(cookie_file):
+        return None
+    try:
+        import requests
+        import http.cookiejar
+        session = requests.Session()
+        jar = http.cookiejar.MozillaCookieJar(cookie_file)
+        jar.load(ignore_discard=True, ignore_expires=True)
+        session.cookies = jar  # type: ignore[assignment]
+        return session
+    except Exception as e:
+        print(f"[WARN] Cookie session build failed: {e}")
+        return None
+
+
 def _try_transcript_api(video_id: str, url: str) -> TranscriptResult | None:
     """Fetch transcript using youtube-transcript-api v1.x (instant, no download)."""
     try:
         from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
 
-        api = YouTubeTranscriptApi()
+        http_client = _build_requests_session_with_cookies()
+        api = YouTubeTranscriptApi(http_client=http_client) if http_client else YouTubeTranscriptApi()
         transcript_list = api.list(video_id)
 
         # Priority: ja/en first, then any available language
@@ -98,7 +117,11 @@ def _fetch_video_title(video_id: str, url: str) -> str:
     """Get video title via yt-dlp metadata (no audio download)."""
     try:
         import yt_dlp
-        with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True}) as ydl:
+        opts: dict = {"quiet": True, "no_warnings": True}
+        cookie_file = os.getenv("COOKIES_FILE", "")
+        if cookie_file and os.path.exists(cookie_file):
+            opts["cookiefile"] = cookie_file
+        with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
             return info.get("title", f"YouTube: {video_id}")
     except Exception:
@@ -122,6 +145,9 @@ def _transcribe_with_whisper(video_id: str, url: str) -> TranscriptResult | None
                     "preferredquality": "96",
                 }],
             }
+            cookie_file = os.getenv("COOKIES_FILE", "")
+            if cookie_file and os.path.exists(cookie_file):
+                ydl_opts["cookiefile"] = cookie_file
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 title = info.get("title", f"YouTube: {video_id}")

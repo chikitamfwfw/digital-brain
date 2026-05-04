@@ -8,8 +8,9 @@ from session.manager import SessionManager
 from services.claude_client import ClaudeClient
 from services.github_client import GitHubClient
 from services.knowledge_store import KnowledgeStore
-from utils.formatters import make_zk_id, make_zk_filename, sanitize_tags, discord_preview, inject_tags
+from utils.formatters import make_zk_id, make_zk_filename, sanitize_tags, inject_tags
 from utils.knowledge_ref import build_knowledge_context
+from utils.discord_utils import send_chunked
 import config
 
 
@@ -114,9 +115,10 @@ def register_chat_command(
         session.pending_content = assistant_text
 
         view = ChatView(github=github, knowledge=knowledge, claude=claude, channel_id=interaction.channel_id)
-        await interaction.followup.send(
-            f"{discord_preview(assistant_text)}\n\n"
-            "💬 続けて話しかけると会話を続けられます。",
+        await send_chunked(
+            interaction.followup,
+            assistant_text,
+            suffix="💬 続けて話しかけると会話を続けられます。",
             view=view,
         )
 
@@ -144,9 +146,10 @@ async def handle_chat_followup(
 
     session.pending_content = assistant_text
     view = ChatView(github=github, knowledge=knowledge, claude=claude, channel_id=message.channel.id)
-    await message.channel.send(
-        f"{discord_preview(assistant_text)}\n\n"
-        "💬 続けて話しかけると会話を続けられます。",
+    await send_chunked(
+        message.channel,
+        assistant_text,
+        suffix="💬 続けて話しかけると会話を続けられます。",
         view=view,
     )
 
