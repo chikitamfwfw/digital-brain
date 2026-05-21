@@ -77,6 +77,25 @@ def inject_tags(content: str, tags: list[str]) -> str:
     return f"---\ntags: [{', '.join(tags)}]\n---\n\n{content}"
 
 
+def set_frontmatter_field(content: str, key: str, value: str) -> str:
+    """YAML フロントマターの ``key`` 行を ``value`` に置換する（無ければ追加）。
+
+    フロントマターが無い内容はそのまま返す。
+    """
+    if not content.startswith("---"):
+        return content
+    lines = content.split("\n")
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            # フロントマター内に key が無かった → 閉じ --- の直前に挿入
+            lines.insert(i, f"{key}: {value}")
+            return "\n".join(lines)
+        if re.match(rf"^{re.escape(key)}:\s*", lines[i]):
+            lines[i] = f"{key}: {value}"
+            return "\n".join(lines)
+    return content
+
+
 def format_search_results(results: list[dict]) -> str:
     if not results:
         return "No matching notes found."

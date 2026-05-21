@@ -24,6 +24,7 @@ from utils.formatters import (
     make_timestamp_filename,
     sanitize_tags,
     inject_tags,
+    set_frontmatter_field,
 )
 from utils.knowledge_ref import build_knowledge_context
 
@@ -153,6 +154,9 @@ class Engine:
         directory, _ = _NOTE_KINDS[note_type]
         rel_path = f"{directory}/{make_zk_filename(dt)}"
 
+        # id / date はエンジンが正とする（ファイル名と一致させ、索引の衝突を防ぐ）
+        content = set_frontmatter_field(content, "id", note_id)
+        content = set_frontmatter_field(content, "date", dt.strftime("%Y-%m-%d"))
         if tags:
             content = inject_tags(content, sanitize_tags(tags))
         rel = self.vault.write_note(rel_path, content)
