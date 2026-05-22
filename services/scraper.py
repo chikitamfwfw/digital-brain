@@ -1,6 +1,8 @@
 from __future__ import annotations
+import base64
 import http.cookiejar
 import os
+import re
 import aiohttp
 from dataclasses import dataclass, field
 from urllib.parse import urljoin, urlparse
@@ -45,6 +47,7 @@ class ScrapeResult:
     text: str
     is_paywall: bool = False
     page_count: int = 1
+    images: list[str] = field(default_factory=list)  # 本文が画像で構成される記事の図解URL
 
 
 def _get_cookie_jar() -> http.cookiejar.MozillaCookieJar | None:
@@ -154,7 +157,17 @@ async def fetch_article(url: str) -> ScrapeResult:
 
     combined = "\n\n---\n\n".join(texts)
 
-    if not combined or len(combined) < 200:
+    # NewsPicks の「図解」記事は本文が文字でなく画像（図解パネル）で構成される。
+    # その場合は本文の図解画像URLを集め、視覚モデルで読み取れるようにする。
+    images: list[str] = []
+    host = (urlparse(url).hostname or "").lower()
+    if "newspicks.com" in host:
+        m = re.search(r"/news/(\d+)", url)
+        if m:
+            images = _newspicks_figure_images(pages_html[0], m.group(1))
+
+    # 本文テキストも図解画像も無ければペイウォール扱い。
+    if (not combined or len(combined) < 200) and not images:
         return ScrapeResult(url=url, title=title or url, text="", is_paywall=True)
 
     return ScrapeResult(
@@ -163,7 +176,71 @@ async def fetch_article(url: str) -> ScrapeResult:
         text=combined,
         is_paywall=False,
         page_count=len(pages_html),
+        images=images,
     )
+
+
+def _newspicks_figure_images(html: str, article_id: str) -> list[str]:
+    """NewsPicks 記事HTMLから本文の図解画像URLを読み順で抽出する。
+
+    図解記事は本文が文字でなく図解パネル（画像）で構成される。各パネルは
+    webp（高解像度・軽量）と png の2形式で埋め込まれるため webp を優先する。
+    画像URLは HTML属性内（&amp;）と JSON文字列内（\\u0026）の両方の形で現れる
+    ため、両エスケープを正規化してから抽出する。
+    """
+    norm = html.replace("\\u0026", "&").replace("&amp;", "&")
+    pat = re.compile(
+        r"https://contents\.newspicks\.com/images/unified/newspicks-news/"
+        + re.escape(article_id) + r"/(\d+)[^\s\"'<>\\]*"
+    )
+    panels: dict[str, list[str]] = {}
+    for m in pat.finditer(norm):
+        panels.setdefault(m.group(1), []).append(m.group(0))
+
+    out: list[str] = []
+    for panel_id in sorted(panels):  # パネルIDは固定長の数値なので文字列ソート＝読み順
+        urls = panels[panel_id]
+        webp = [u for u in urls if "WEBP" in u.upper()]
+        out.append(webp[0] if webp else urls[0])
+    return out
+
+
+async def download_images_as_blocks(urls: list[str], limit: int = 20) -> list[dict]:
+    """画像URL群をダウンロードし Anthropic API の image コンテンツブロック列にする。
+
+    NewsPicks 図解記事のように本文が画像で構成されるページを、視覚モデルへ
+    渡すための変換。会員制画像にも対応するためドメイン一致 Cookie を付与する。
+    """
+    allowed = ("image/jpeg", "image/png", "image/gif", "image/webp")
+    blocks: list[dict] = []
+    async with aiohttp.ClientSession(headers=HEADERS) as session:
+        for url in urls[:limit]:
+            try:
+                async with session.get(
+                    url,
+                    cookies=_cookies_for_url(url),
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as resp:
+                    if resp.status != 200:
+                        continue
+                    ctype = (
+                        resp.headers.get("Content-Type", "")
+                        .split(";")[0].strip().lower()
+                    )
+                    if ctype not in allowed:
+                        continue
+                    data = await resp.read()
+            except Exception:
+                continue
+            blocks.append({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": ctype,
+                    "data": base64.b64encode(data).decode("ascii"),
+                },
+            })
+    return blocks
 
 
 async def _download_html(url: str, cookies: dict | None = None) -> str | None:

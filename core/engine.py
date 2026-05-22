@@ -116,6 +116,7 @@ class Engine:
             "text": result.text,
             "is_paywall": result.is_paywall,
             "page_count": result.page_count,
+            "images": result.images,
         }
 
     def fetch_youtube(self, url: str) -> dict:
@@ -186,13 +187,15 @@ class Engine:
             related = []
         return build_knowledge_context(related) if related else ""
 
-    def _chat(self, session: Session, user_message: str, ctx: str) -> str:
+    def _chat(self, session: Session, user_message: str, ctx: str,
+              images: list[dict] | None = None) -> str:
         reply, _ = asyncio.run(
             self.claude.chat_with_tools(
                 command=session.command,
                 history=session.history,
                 user_message=user_message,
                 extra_system=ctx,
+                images=images,
             )
         )
         session.pending_content = reply
@@ -234,6 +237,7 @@ class Engine:
 
         from services.newspicks_client import is_newspicks_video_url
 
+        image_blocks: list[dict] | None = None
         is_youtube = any(
             h in url for h in ("youtube.com/watch", "youtu.be/", "youtube.com/shorts/")
         )
@@ -284,14 +288,29 @@ class Engine:
                     "title": art["title"],
                 }
             session.topic = "article"
-            user_message = (
-                f"以下の記事を読みました。\n\n"
-                f"**タイトル:** {art['title']}\n**URL:** {url}\n\n"
-                f"**本文:**\n{art['text'][:30000]}"
-            )
+            if art.get("images"):
+                from services.scraper import download_images_as_blocks
+
+                image_blocks = asyncio.run(download_images_as_blocks(art["images"]))
+            if image_blocks:
+                # 図解記事: 本文は画像。図解パネルを視覚モデルに添付して読み取らせる。
+                user_message = (
+                    f"以下は NewsPicks の図解記事です。本文は文字ではなく "
+                    f"{len(image_blocks)} 枚の図解画像で構成されています。"
+                    f"添付の画像を順に読み取り、記事の内容を整理してください。\n\n"
+                    f"**タイトル:** {art['title']}\n**URL:** {url}\n\n"
+                    f"**記事メタ情報（ナビゲーション等のノイズを含む）:**\n"
+                    f"{art['text'][:2000]}"
+                )
+            else:
+                user_message = (
+                    f"以下の記事を読みました。\n\n"
+                    f"**タイトル:** {art['title']}\n**URL:** {url}\n\n"
+                    f"**本文:**\n{art['text'][:30000]}"
+                )
             ctx = self._knowledge_ctx(f"{art['title']} {art['text'][:300]}")
 
-        reply = self._chat(session, user_message, ctx)
+        reply = self._chat(session, user_message, ctx, images=image_blocks)
         return {"session_id": session.id, "reply": reply}
 
     def continue_session(self, session_id: str, message: str) -> dict:

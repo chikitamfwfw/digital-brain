@@ -64,10 +64,20 @@ class ClaudeClient:
         history: list[dict],
         user_message: str,
         extra_system: str = "",
+        images: list[dict] | None = None,
     ) -> tuple[str, list[dict]]:
-        """Chat with Anthropic web_search_20250305 (server-side, same as Claude.ai)."""
+        """Chat with Anthropic web_search_20250305 (server-side, same as Claude.ai).
+
+        images: 図解記事など本文が画像で構成されるページを視覚モデルへ渡すための
+        image コンテンツブロック列。API 呼び出しの最初の user ターンにのみ添付し、
+        会話履歴にはテキストのみ残す（セッションファイルの肥大化を防ぐ）。
+        """
         system = await self._build_system(command, extra_system)
-        api_messages: list[dict] = list(history) + [{"role": "user", "content": user_message}]
+        if images:
+            first_content = [{"type": "text", "text": user_message}, *images]
+        else:
+            first_content = user_message
+        api_messages: list[dict] = list(history) + [{"role": "user", "content": first_content}]
 
         text = ""
         for _ in range(10):
