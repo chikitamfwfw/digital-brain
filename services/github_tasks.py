@@ -20,6 +20,17 @@ _GQL = "https://api.github.com/graphql"
 # Projects v2 の Status フィールドで使う値
 STATUS_VALUES = ("Todo", "In Progress", "Done")
 
+# 優先度フィールドの選択肢
+PRIORITY_VALUES = ("高", "中", "低")
+
+# Projects v2 に用意するカスタムフィールド（名前 → データ型）
+_CUSTOM_FIELD_TYPES = {
+    "案件": "TEXT",
+    "期日": "DATE",
+    "工数": "NUMBER",
+    "優先度": "SINGLE_SELECT",
+}
+
 
 class GitHubError(RuntimeError):
     """GitHub API 呼び出しの失敗。"""
@@ -158,7 +169,10 @@ class GitHubTasks:
                 project = created["createProjectV2"]["projectV2"]
 
             status = self._status_field(project["id"])
-            self._project_cache = {"id": project["id"], "status": status}
+            fields = self._ensure_custom_fields(project["id"])
+            self._project_cache = {
+                "id": project["id"], "status": status, "fields": fields,
+            }
             return self._project_cache
         except GitHubError as e:
             print(f"[github_tasks] Projects v2 連携をスキップ: {e}")
@@ -174,6 +188,86 @@ class GitHubTasks:
         options = {o["name"]: o["id"] for o in field.get("options", [])}
         return {"field_id": field.get("id"), "options": options}
 
+    # ── Projects v2 カスタムフィールド（案件・期日・優先度・工数） ──────────
+    def _ensure_custom_fields(self, project_id: str) -> dict:
+        """カスタムフィールドを確認し、無ければ作成する（best-effort）。
+
+        戻り値: {フィールド名: {"id": str, "options": {選択肢名: ID}}}。
+        """
+        existing = self._list_fields(project_id)
+        out: dict = {}
+        for name, dtype in _CUSTOM_FIELD_TYPES.items():
+            if name in existing:
+                out[name] = existing[name]
+                continue
+            try:
+                created = self._create_field(project_id, name, dtype)
+                if created:
+                    out[name] = created
+            except GitHubError as e:
+                print(f"[github_tasks] フィールド作成をスキップ ({name}): {e}")
+        return out
+
+    def _list_fields(self, project_id: str) -> dict:
+        data = self._gql(
+            "query($p:ID!){ node(id:$p){ ... on ProjectV2 { fields(first:50){ nodes{ "
+            "... on ProjectV2FieldCommon { id name } "
+            "... on ProjectV2SingleSelectField { id name options{ id name } } "
+            "} } } } }",
+            {"p": project_id},
+        )
+        nodes = (((data.get("node") or {}).get("fields")) or {}).get("nodes") or []
+        out: dict = {}
+        for n in nodes:
+            if not n or "name" not in n:
+                continue
+            options = {o["name"]: o["id"] for o in (n.get("options") or [])}
+            out[n["name"]] = {"id": n["id"], "options": options}
+        return out
+
+    def _create_field(self, project_id: str, name: str, dtype: str) -> dict | None:
+        if dtype == "SINGLE_SELECT":
+            # 優先度: 高/中/低 を固定の選択肢として作成する。
+            options_gql = (
+                '{name:"高",color:RED,description:""},'
+                '{name:"中",color:YELLOW,description:""},'
+                '{name:"低",color:GRAY,description:""}'
+            )
+            data = self._gql(
+                "mutation($p:ID!,$n:String!){ createProjectV2Field(input:{projectId:$p,"
+                "dataType:SINGLE_SELECT,name:$n,singleSelectOptions:[" + options_gql
+                + "]}){ projectV2Field{ "
+                "... on ProjectV2SingleSelectField { id name options{ id name } } } } }",
+                {"p": project_id, "n": name},
+            )
+        else:
+            data = self._gql(
+                "mutation($p:ID!,$n:String!,$t:ProjectV2CustomFieldType!){ "
+                "createProjectV2Field(input:{projectId:$p,dataType:$t,name:$n}){ "
+                "projectV2Field{ ... on ProjectV2FieldCommon { id name } } } }",
+                {"p": project_id, "n": name, "t": dtype},
+            )
+        field = (data.get("createProjectV2Field") or {}).get("projectV2Field") or {}
+        if not field.get("id"):
+            return None
+        options = {o["name"]: o["id"] for o in (field.get("options") or [])}
+        return {"id": field["id"], "options": options}
+
+    def set_field_value(
+        self, project_id: str, item_id: str, field_id: str, value: dict
+    ) -> None:
+        """ボード項目のフィールド値を設定する。
+
+        value 例: {"text": "案件名"} / {"date": "2026-05-30"} / {"number": 3}
+                  / {"singleSelectOptionId": "..."}
+        """
+        self._gql(
+            "mutation($p:ID!,$i:ID!,$f:ID!,$v:ProjectV2FieldValue!){ "
+            "updateProjectV2ItemFieldValue(input:{projectId:$p,itemId:$i,fieldId:$f,"
+            "value:$v}){ projectV2Item{ id } } }",
+            {"p": project_id, "i": item_id, "f": field_id, "v": value},
+        )
+
     def add_to_board(self, project_id: str, issue_node_id: str) -> str:
         data = self._gql(
             "mutation($p:ID!,$c:ID!){ addProjectV2ItemById(input:{projectId:$p,contentId:$c})"
@@ -183,12 +277,20 @@ class GitHubTasks:
         return data["addProjectV2ItemById"]["item"]["id"]
 
     def board_items(self, project_id: str) -> list[dict]:
-        """ボード上の項目（Issue 番号・item ID・Status 名）を一覧で返す。"""
+        """ボード上の項目（Issue 番号・item ID・各フィールド値）を一覧で返す。"""
         data = self._gql(
             "query($p:ID!){ node(id:$p){ ... on ProjectV2 { items(first:100){ nodes{ id "
             "content{ ... on Issue { number } } "
-            "fieldValueByName(name:\"Status\"){ "
-            "... on ProjectV2ItemFieldSingleSelectValue { name } } } } } } }",
+            'status: fieldValueByName(name:"Status"){ '
+            "... on ProjectV2ItemFieldSingleSelectValue { name } } "
+            'anken: fieldValueByName(name:"案件"){ '
+            "... on ProjectV2ItemFieldTextValue { text } } "
+            'kijitsu: fieldValueByName(name:"期日"){ '
+            "... on ProjectV2ItemFieldDateValue { date } } "
+            'yusen: fieldValueByName(name:"優先度"){ '
+            "... on ProjectV2ItemFieldSingleSelectValue { name } } "
+            'kosu: fieldValueByName(name:"工数"){ '
+            "... on ProjectV2ItemFieldNumberValue { number } } } } } } }",
             {"p": project_id},
         )
         nodes = (((data.get("node") or {}).get("items")) or {}).get("nodes") or []
@@ -197,11 +299,14 @@ class GitHubTasks:
             content = n.get("content") or {}
             if "number" not in content:
                 continue
-            value = n.get("fieldValueByName") or {}
             out.append({
                 "item_id": n["id"],
                 "number": content["number"],
-                "status": value.get("name"),
+                "status": (n.get("status") or {}).get("name"),
+                "案件": (n.get("anken") or {}).get("text"),
+                "期日": (n.get("kijitsu") or {}).get("date"),
+                "優先度": (n.get("yusen") or {}).get("name"),
+                "工数": (n.get("kosu") or {}).get("number"),
             })
         return out
 

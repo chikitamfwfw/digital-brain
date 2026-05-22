@@ -129,17 +129,26 @@ def main(argv: list[str] | None = None) -> int:
     ta = tsub.add_parser("add", help="タスクを作成")
     ta.add_argument("title")
     ta.add_argument("--body", default="")
-    ta.add_argument("--project", default=None, help="紐づけるプロジェクト/テーマ")
+    ta.add_argument("--project", default=None, help="案件名")
     ta.add_argument("--note", default=None, help="紐づける ZK ノートの ID/パス")
     ta.add_argument("--label", action="append", default=[])
+    ta.add_argument("--due", default=None, help="期日（YYYY-MM-DD）")
+    ta.add_argument("--effort", type=float, default=None, help="工数（数値）")
+    ta.add_argument("--priority", choices=["高", "中", "低"], default=None, help="優先度")
     tl = tsub.add_parser("list", help="タスク一覧")
     tl.add_argument("--status", choices=["Todo", "In Progress", "Done"], default=None)
-    tl.add_argument("--project", default=None)
+    tl.add_argument("--project", default=None, help="案件名で絞り込み")
     ts = tsub.add_parser("show", help="タスク詳細")
     ts.add_argument("number", type=int)
-    tu = tsub.add_parser("update", help="タスクの Status を更新")
+    tu = tsub.add_parser("update", help="タスクの Status / フィールドを更新")
     tu.add_argument("number", type=int)
-    tu.add_argument("status", choices=["Todo", "In Progress", "Done"])
+    tu.add_argument(
+        "status", nargs="?", choices=["Todo", "In Progress", "Done"], default=None
+    )
+    tu.add_argument("--project", default=None, help="案件名")
+    tu.add_argument("--due", default=None, help="期日（YYYY-MM-DD）")
+    tu.add_argument("--effort", type=float, default=None, help="工数（数値）")
+    tu.add_argument("--priority", choices=["高", "中", "低"], default=None, help="優先度")
     td = tsub.add_parser("done", help="タスクを完了")
     td.add_argument("number", type=int)
 
@@ -191,15 +200,28 @@ def main(argv: list[str] | None = None) -> int:
             _print(_call("POST", "/task/add", {
                 "title": args.title, "body": args.body, "project": args.project,
                 "note": args.note, "labels": args.label,
+                "due": args.due, "effort": args.effort, "priority": args.priority,
             }))
         elif tc == "list":
             res = _call("POST", "/task/list", {"status": args.status, "project": args.project})
             for t in res.get("tasks", []):
-                print(f"#{t['number']}  [{t.get('board_status', '?')}]  {t['title']}  {t['url']}")
+                extras = []
+                if t.get("優先度"):
+                    extras.append(f"優先度:{t['優先度']}")
+                if t.get("期日"):
+                    extras.append(f"期日:{t['期日']}")
+                if t.get("案件"):
+                    extras.append(f"案件:{t['案件']}")
+                tail = ("  " + " ".join(extras)) if extras else ""
+                print(f"#{t['number']}  [{t.get('board_status', '?')}]  {t['title']}{tail}  {t['url']}")
         elif tc == "show":
             _print(_call("GET", f"/task/show?number={args.number}"))
         elif tc == "update":
-            _print(_call("POST", "/task/update", {"number": args.number, "status": args.status}))
+            _print(_call("POST", "/task/update", {
+                "number": args.number, "status": args.status,
+                "project": args.project, "due": args.due,
+                "effort": args.effort, "priority": args.priority,
+            }))
         elif tc == "done":
             _print(_call("POST", "/task/done", {"number": args.number}))
     return 0

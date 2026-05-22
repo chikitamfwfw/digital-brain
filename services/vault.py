@@ -129,11 +129,12 @@ class Vault:
         return [line for line in out.splitlines() if line]
 
     def sync(self) -> dict:
-        """実行前ガード: fetch → 未コミットの手編集を自動コミット → pull --rebase。
+        """実行前ガード: fetch → 未コミットの手編集を自動コミット → pull --rebase → push。
 
         - ローカルの手編集は破棄せず自動コミットして保護する。
         - GitHub 側の直接編集は pull --rebase で取り込む。
         - 競合時は rebase を中断し ``ConflictError`` を送出する（自動破棄しない）。
+        - ローカル先行分は push し、GitHub を常に最新に保つ。
         """
         branch = self.current_branch()
         self._git("fetch", "origin", branch, check=False)
@@ -153,7 +154,14 @@ class Vault:
             # upstream 未設定など、競合以外の失敗
             raise GitError(f"git pull --rebase: {pull.stderr.strip()}")
 
-        return {"branch": branch, "auto_committed": auto_committed}
+        # ローカル先行分（自動コミット・ノート保存等）を push して GitHub を最新化。
+        # 一時的な失敗で処理全体を止めないよう best-effort（次回 sync で再試行）。
+        push = self._git("push", "origin", branch, check=False)
+        pushed = push.returncode == 0
+        if not pushed:
+            print(f"[vault] sync: push に失敗（次回再試行）: {push.stderr.strip()}")
+
+        return {"branch": branch, "auto_committed": auto_committed, "pushed": pushed}
 
     def commit_and_push(self, message: str) -> str:
         """ステージ済み変更をコミットして push する。コミット SHA を返す。

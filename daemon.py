@@ -70,11 +70,16 @@ def _route(method: str, path: str, body: dict, query: dict) -> tuple[int, dict]:
         return 200, eng.tasks.add(
             body["title"], body.get("body", ""), body.get("project"),
             body.get("note"), body.get("labels"),
+            body.get("due"), body.get("effort"), body.get("priority"),
         )
     if method == "POST" and path == "/task/list":
         return 200, {"tasks": eng.tasks.list(body.get("status"), body.get("project"))}
     if method == "POST" and path == "/task/update":
-        return 200, eng.tasks.update(int(body["number"]), body["status"])
+        return 200, eng.tasks.update(
+            int(body["number"]), body.get("status"),
+            body.get("project"), body.get("due"),
+            body.get("effort"), body.get("priority"),
+        )
     if method == "POST" and path == "/task/done":
         return 200, eng.tasks.done(int(body["number"]))
     if method == "GET" and path == "/task/show":
