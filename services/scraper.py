@@ -3,7 +3,7 @@ import http.cookiejar
 import os
 import aiohttp
 from dataclasses import dataclass, field
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 import trafilatura
 
 HEADERS = {
@@ -14,8 +14,8 @@ HEADERS = {
     )
 }
 
-_COOKIES: dict | None = None
-_COOKIES_LOADED: bool = False
+_COOKIE_JAR: http.cookiejar.MozillaCookieJar | None = None
+_COOKIE_JAR_LOADED: bool = False
 
 _NEXT_PAGE_TEXTS = [
     "次のページ", "次へ", "次ページ", "続きを読む",
@@ -32,11 +32,12 @@ class ScrapeResult:
     page_count: int = 1
 
 
-def _get_cookies() -> dict | None:
-    global _COOKIES, _COOKIES_LOADED
-    if _COOKIES_LOADED:
-        return _COOKIES
-    _COOKIES_LOADED = True
+def _get_cookie_jar() -> http.cookiejar.MozillaCookieJar | None:
+    """COOKIES_FILE から Cookie ジャーを読み込む（ドメイン情報を保持したまま）。"""
+    global _COOKIE_JAR, _COOKIE_JAR_LOADED
+    if _COOKIE_JAR_LOADED:
+        return _COOKIE_JAR
+    _COOKIE_JAR_LOADED = True
 
     cookie_file = os.getenv("COOKIES_FILE", "")
     if not cookie_file or not os.path.exists(cookie_file):
@@ -45,12 +46,33 @@ def _get_cookies() -> dict | None:
     try:
         jar = http.cookiejar.MozillaCookieJar(cookie_file)
         jar.load(ignore_discard=True, ignore_expires=True)
-        _COOKIES = {c.name: c.value for c in jar}
-        print(f"[INFO] Loaded {len(_COOKIES)} cookies from {cookie_file}")
-        return _COOKIES
+        _COOKIE_JAR = jar
+        print(f"[INFO] Loaded {sum(1 for _ in jar)} cookies from {cookie_file}")
+        return jar
     except Exception as e:
         print(f"[WARN] Cookie load failed: {e}")
         return None
+
+
+def _cookies_for_url(url: str) -> dict:
+    """URL のドメインに一致する Cookie のみを {name: value} で返す。
+
+    ブラウザ全体の Cookie エクスポート（多数サイト分）が渡されても、対象サイトの
+    ドメインに一致する Cookie だけを送信する。他サイトのログイン情報を漏らさず、
+    Cookie 名の衝突も防ぐ。
+    """
+    jar = _get_cookie_jar()
+    if jar is None:
+        return {}
+    host = (urlparse(url).hostname or "").lower()
+    if not host:
+        return {}
+    out: dict = {}
+    for c in jar:
+        domain = (c.domain or "").lstrip(".").lower()
+        if domain and (host == domain or host.endswith("." + domain)):
+            out[c.name] = c.value
+    return out
 
 
 def _find_next_page_url(html: str, current_url: str) -> str | None:
@@ -79,8 +101,6 @@ def _find_next_page_url(html: str, current_url: str) -> str | None:
 
 
 async def fetch_article(url: str) -> ScrapeResult:
-    cookies = _get_cookies()
-
     pages_html: list[str] = []
     current_url = url
     visited: set[str] = set()
@@ -90,7 +110,7 @@ async def fetch_article(url: str) -> ScrapeResult:
             break
         visited.add(current_url)
 
-        html = await _download_html(current_url, cookies=cookies)
+        html = await _download_html(current_url, cookies=_cookies_for_url(current_url))
         if html is None:
             break
         pages_html.append(html)
