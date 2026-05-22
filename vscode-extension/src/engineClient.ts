@@ -20,13 +20,20 @@ export class EngineClient {
     if (explicit && fs.existsSync(path.join(explicit, "daemon.py"))) {
       return explicit;
     }
-    const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    if (ws) {
-      for (const sibling of ["digital-brain", "discord-second-brain"]) {
-        const candidate = path.join(path.dirname(ws), sibling);
-        if (fs.existsSync(path.join(candidate, "daemon.py"))) {
-          return candidate;
+    const names = ["digital-brain", "discord-second-brain"];
+    for (const folder of vscode.workspace.workspaceFolders ?? []) {
+      const ws = folder.uri.fsPath;
+      // ワークスペースの兄弟フォルダ・子フォルダ・自身の両方を探索
+      for (const base of [path.dirname(ws), ws]) {
+        for (const name of names) {
+          const candidate = path.join(base, name);
+          if (fs.existsSync(path.join(candidate, "daemon.py"))) {
+            return candidate;
+          }
         }
+      }
+      if (fs.existsSync(path.join(ws, "daemon.py"))) {
+        return ws;
       }
     }
     return undefined;
@@ -94,7 +101,15 @@ export class EngineClient {
         "エンジンが見つかりません。設定 secondBrain.enginePath に digital-brain のパスを指定してください。"
       );
     }
-    const python = this.cfg.get<string>("pythonPath", "python3");
+    // エンジンの venv の Python を最優先（依存パッケージが入っているため）。
+    // 無ければ設定値 secondBrain.pythonPath、それも無ければ python3。
+    const venvPy =
+      process.platform === "win32"
+        ? path.join(enginePath, ".venv", "Scripts", "python.exe")
+        : path.join(enginePath, ".venv", "bin", "python");
+    const python = fs.existsSync(venvPy)
+      ? venvPy
+      : this.cfg.get<string>("pythonPath", "python3");
     const child = cp.spawn(python, [path.join(enginePath, "daemon.py")], {
       cwd: enginePath,
       detached: true,

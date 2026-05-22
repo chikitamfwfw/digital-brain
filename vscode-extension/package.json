@@ -4,6 +4,7 @@
   "description": "VSCode から Second Brain（セカンドブレイン）を操作する",
   "version": "0.1.0",
   "publisher": "chikitamfwfw",
+  "repository": { "type": "git", "url": "https://github.com/chikitamfwfw/digital-brain" },
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Other"],
   "activationEvents": ["onStartupFinished"],
