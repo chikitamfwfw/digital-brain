@@ -132,6 +132,18 @@ class Engine:
             "channel_url": result.channel_url,
         }
 
+    def fetch_newspicks_video(self, url: str) -> dict:
+        from services.newspicks_client import get_newspicks_video
+
+        v = asyncio.run(get_newspicks_video(url))
+        return {
+            "url": v.url,
+            "title": v.title,
+            "description": v.description,
+            "transcript": v.transcript,
+            "method": v.method,
+        }
+
     # ── Claude Code モード: 完成済みノートの保存 ────────────────────────────
     def save_note(
         self,
@@ -220,10 +232,35 @@ class Engine:
         session = self.sessions.create("link")
         session.references.append(url)
 
+        from services.newspicks_client import is_newspicks_video_url
+
         is_youtube = any(
             h in url for h in ("youtube.com/watch", "youtu.be/", "youtube.com/shorts/")
         )
-        if is_youtube:
+        if is_newspicks_video_url(url):
+            np = self.fetch_newspicks_video(url)
+            if not np["transcript"] and not np["description"]:
+                self.sessions.close(session.id)
+                return {"session_id": session.id,
+                        "error": "NewsPicks 動画ページを取得できませんでした。"}
+            session.topic = "youtube"  # 動画として literature/youtube テンプレで保存
+            session.raw_content = np["transcript"]
+            if np["transcript"]:
+                user_message = (
+                    f"以下の NewsPicks 動画を共有します。\n\n"
+                    f"**タイトル:** {np['title']}\n**URL:** {url}\n\n"
+                    f"**動画の説明:**\n{np['description'][:1500]}\n\n"
+                    f"**書き起こし全文（音声からAI文字起こし）:**\n{np['transcript']}"
+                )
+            else:
+                user_message = (
+                    f"以下の NewsPicks 動画を共有します"
+                    f"（※音声の文字起こしに失敗したため説明文のみ）。\n\n"
+                    f"**タイトル:** {np['title']}\n**URL:** {url}\n\n"
+                    f"**動画の説明:**\n{np['description'][:3000]}"
+                )
+            ctx = self._knowledge_ctx(f"{np['title']} {np['description'][:300]}")
+        elif is_youtube:
             yt = self.fetch_youtube(url)
             if yt["method"] == "unavailable" or not yt["transcript"]:
                 self.sessions.close(session.id)
