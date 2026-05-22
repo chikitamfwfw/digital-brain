@@ -14,7 +14,11 @@ _WEB_SEARCH_TOOL = {
 
 class ClaudeClient:
     def __init__(self, vault: Vault) -> None:
-        self._client = anthropic.AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY)
+        # max_retries: 過負荷(429/529)・一時障害(500/503)時に SDK が指数バックオフで
+        # 自動リトライする回数。既定の 2 では Opus 過負荷時に保存が落ちるため引き上げる。
+        self._client = anthropic.AsyncAnthropic(
+            api_key=config.ANTHROPIC_API_KEY, max_retries=8
+        )
         self._vault = vault
 
     async def chat(
@@ -154,7 +158,8 @@ class ClaudeClient:
             + f"\n## 会話内容\n\n{conversation_text}\n\n"
             f"## テンプレート\n\n{template}\n\n"
             "テンプレートの{{}}プレースホルダーを会話の内容で埋めてください。"
-            "tagsフィールドは空のまま（[]）にしてください。"
+            "tags フィールドと tasks フィールドは必ず空のリスト [] のままにしてください"
+            "（tasks はタスク管理機能が別途使用するフィールドのため、ここでは絶対に値を入れない）。"
         )
 
         response = await self._client.messages.create(
@@ -170,8 +175,16 @@ class ClaudeClient:
             ),
             messages=[{"role": "user", "content": prompt}],
         )
-        text = response.content[0].text
-        # Claudeが前置き文を追加した場合、最初の --- から始まるよう切り詰める
+        text = response.content[0].text.strip()
+        # Claude がノート全体をコードフェンス（```markdown ...```）で囲んだ場合は剥がす
+        if text.startswith("```"):
+            newline = text.find("\n")
+            if newline != -1:
+                text = text[newline + 1:]
+        if text.rstrip().endswith("```"):
+            text = text.rstrip()
+            text = text[: text.rfind("```")].rstrip()
+        # 前置き文があれば最初の '---'（フロントマター開始）から始まるよう切り詰める
         idx = text.find("---")
         if idx > 0:
             text = text[idx:]

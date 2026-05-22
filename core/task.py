@@ -9,8 +9,9 @@ from services.github_tasks import GitHubTasks, GitHubError, STATUS_VALUES
 
 
 class TaskService:
-    def __init__(self) -> None:
+    def __init__(self, vault: object | None = None) -> None:
         self._gh: GitHubTasks | None = None
+        self._vault = vault
 
     @property
     def gh(self) -> GitHubTasks:
@@ -84,12 +85,27 @@ class TaskService:
             except GitHubError as e:
                 print(f"[task] ボード登録をスキップ: {e}")
 
+        # ノート → Issue の逆リンク（ノートの frontmatter tasks: に番号を追記）
+        linked_note: str | None = None
+        if note and self._vault is not None:
+            try:
+                self._vault.sync()
+                rel = self._vault.link_task(note, issue["number"])
+                if rel:
+                    self._vault.commit_and_push(
+                        f"chore: link task #{issue['number']} -> {rel}"
+                    )
+                    linked_note = rel
+            except Exception as e:  # noqa: BLE001 - 逆リンクは best-effort
+                print(f"[task] ノートへの逆リンクをスキップ: {e}")
+
         return {
             "number": issue["number"],
             "title": issue["title"],
             "url": issue["url"],
             "status": "Todo" if board else "(ボード未連携)",
             "on_board": board,
+            "linked_note": linked_note,
         }
 
     def list(self, status: str | None = None, project: str | None = None) -> list[dict]:

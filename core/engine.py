@@ -81,7 +81,7 @@ class Engine:
         if self._tasks is None:
             from core.task import TaskService
 
-            self._tasks = TaskService()
+            self._tasks = TaskService(self.vault)
         return self._tasks
 
     def warm_up(self) -> None:

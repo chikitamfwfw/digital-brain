@@ -10,6 +10,16 @@ import time
 from pathlib import Path
 
 import config
+from utils.formatters import add_to_frontmatter_list
+
+_NOTE_DIRS = (
+    config.FLEETING_PATH,
+    config.ARTICLES_PATH,
+    config.YOUTUBE_PATH,
+    config.PERMANENT_PATH,
+    config.RESEARCH_PATH,
+    config.PLANNING_PATH,
+)
 
 
 class GitError(RuntimeError):
@@ -62,6 +72,37 @@ class Vault:
         if not content.endswith("\n"):
             content += "\n"
         p.write_text(content, encoding="utf-8")
+        return rel
+
+    # ── ノート検索・タスク逆リンク ──────────────────────────────────────────
+    def find_note(self, ref: str) -> str | None:
+        """ZK-id またはパス指定からノートの相対パスを解決する。"""
+        ref = ref.strip()
+        if ref.endswith(".md") and (self.root / ref).is_file():
+            return ref.replace("\\", "/")
+        name = Path(ref).name
+        if not name.endswith(".md"):
+            name += ".md"
+        for directory in _NOTE_DIRS:
+            if (self.root / directory / name).is_file():
+                return f"{directory}/{name}"
+        return None
+
+    def link_task(self, note_ref: str, issue_number: int) -> str | None:
+        """ノートの frontmatter ``tasks:`` に Issue 番号を追記する。
+
+        対象ノートの相対パスを返す（見つからなければ None）。commit はしない。
+        """
+        rel = self.find_note(note_ref)
+        if rel is None:
+            return None
+        path = self.root / rel
+        content = path.read_text(encoding="utf-8")
+        updated = add_to_frontmatter_list(content, "tasks", str(issue_number))
+        if updated != content:
+            if not updated.endswith("\n"):
+                updated += "\n"
+            path.write_text(updated, encoding="utf-8")
         return rel
 
     # ── Git ─────────────────────────────────────────────────────────────────
