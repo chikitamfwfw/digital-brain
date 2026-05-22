@@ -14,6 +14,13 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+# Windows の非 UTF-8 コンソール（cp932 等）対策で標準出力を UTF-8 に切り替える。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 import config
 
 _BASE = f"http://{config.DAEMON_HOST}:{config.DAEMON_PORT}"

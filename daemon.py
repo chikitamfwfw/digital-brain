@@ -10,9 +10,18 @@ Engine の機能を公開する。Claude Code（`brain` CLI 経由）と VSCode 
 from __future__ import annotations
 
 import json
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
+
+# Windows の非 UTF-8 コンソール（cp932 等）で print が UnicodeEncodeError に
+# ならないよう、標準出力/標準エラーを UTF-8 に切り替える。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 
 import config
 from core.engine import Engine

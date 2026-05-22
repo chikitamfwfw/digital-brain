@@ -96,6 +96,30 @@ def set_frontmatter_field(content: str, key: str, value: str) -> str:
     return content
 
 
+def add_to_frontmatter_list(content: str, key: str, value: str) -> str:
+    """YAML フロントマターのインラインリスト ``key`` に ``value`` を追加する。
+
+    既存項目に同値があれば何もしない。フロントマター内に ``key`` が無ければ追加する。
+    フロントマターが無い内容はそのまま返す。
+    """
+    if not content.startswith("---"):
+        return content
+    lines = content.split("\n")
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            lines.insert(i, f"{key}: [{value}]")
+            return "\n".join(lines)
+        m = re.match(rf"^{re.escape(key)}:\s*\[(.*)\]\s*$", lines[i])
+        if m:
+            items = [x.strip() for x in m.group(1).split(",") if x.strip()]
+            if value in items:
+                return content
+            items.append(value)
+            lines[i] = f"{key}: [{', '.join(items)}]"
+            return "\n".join(lines)
+    return content
+
+
 def format_search_results(results: list[dict]) -> str:
     if not results:
         return "No matching notes found."
