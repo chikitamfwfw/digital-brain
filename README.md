@@ -1,166 +1,139 @@
-# Discord Second Brain Bot 🧠
+# digital-brain — Second Brain エンジン
 
-DiscordをZettelkasten × GTDのセカンドブレインとして活用するAI Botです。
+Zettelkasten 形式の個人知識ベース（セカンドブレイン）を運用するエンジンです。
+記事・動画・メモ・調査・企画を、AI との会話を通じて構造化ノートとして蓄積します。
 
-Claude AI（Web検索付き）+ ChromaDB（意味検索）+ GitHub（ノート保存）を組み合わせ、Discordで話した内容を自動的に構造化ノートとして蓄積します。
+旧 Discord Bot から移行し、現在は **VSCode 上で 3 通りの方法**で操作できます。
 
-## 機能
+## 構成（2 リポジトリ）
 
-| コマンド | 説明 |
+| リポジトリ | 役割 |
 |---|---|
-| `/memo <テキスト>` | メモを共有してAIと深掘り会話。保存ボタンでFleetingノートに整理。Permanent Note化も可能。 |
-| `/link <URL>` | 記事・YouTube URLを取り込んでAIと議論。保存でLiteratureノートに整理。 |
-| `/research <トピック>` | Web検索＋蓄積知識を使って徹底調査。会話でさらに深掘りしてResearchノートに保存。 |
-| `/planning <テーマ>` | アイデアや目標についてAIとブレスト。会話をPlanningノートに保存。 |
-| `/search <クエリ>` | 蓄積した全ノートをセマンティック検索（意味的な近さで検索）。 |
-| `/chat <メッセージ>` | Web検索＋過去ノートを参照した自由会話。会話を任意でノートに保存可能。 |
+| **digital-brain**（本リポジトリ） | エンジン本体。常駐デーモン・CLI・VSCode 拡張機能 |
+| **second-brain** | ボルト（ノートの保管庫）。Markdown ノート + テンプレート + 設定 |
 
-### 会話フロー
-
-全コマンド共通で「**会話 → 保存**」の流れです。コマンド実行直後にMarkdownテンプレートは出力されません。自然な会話で深掘りした後、`💾 保存` ボタンを押した時点で会話全体がノートに整理されます。
+2 つは同じ親フォルダに隣り合わせて配置します:
 
 ```
-/research 仁王3
-  → AIがWeb検索して会話形式で話す
-  → 追加で質問・議論できる
-  → 💾 保存 → GitHubにResearchノートとしてコミット + ChromaDBに登録
+任意の親フォルダ/
+  digital-brain/   ← エンジン（このリポジトリ）
+  second-brain/    ← ボルト（ノート）
 ```
+
+処理の中心は **常駐ローカルデーモン**（`daemon.py`）で、ChromaDB の埋め込みモデルを
+ウォーム保持して高速に動作します。初回のコマンド実行時に自動起動します。
+
+## セットアップ
+
+別 PC での構築を含む手順は **[SETUP.md](SETUP.md)** を参照してください。
+
+要約: 両リポジトリを clone → `digital-brain` で `.\setup.ps1` を実行 →
+`.env` に API キーを設定。
+
+---
+
+## 操作方法は 3 通り
+
+### 方法 1: Claude Code（手軽）
+
+VSCode で `second-brain` フォルダを開き、Claude Code のスラッシュコマンドを使います。
+会話は Claude Code 自身が担当し、保存・同期・検索はエンジンが担当します。
+
+| コマンド | 機能 |
+|---|---|
+| `/memo <内容>` | メモを会話で深掘り → 保存で Fleeting ノート化 |
+| `/link <URL>` | 記事・YouTube を取り込んで議論 → Literature ノート化 |
+| `/research <トピック>` | Web 検索 + 蓄積知識で調査 → Research ノート化 |
+| `/planning <テーマ>` | 企画・目標をブレスト → Planning ノート化 |
+| `/chat <メッセージ>` | 自由会話（任意で保存） |
+| `/search <クエリ>` | 蓄積ノートを意味検索 |
+| `/task <内容>` | GitHub Issue としてタスク作成・一覧・完了 |
+| `/sync` | ボルトと GitHub を同期 |
+| `/permanent` | Fleeting から Permanent ノートを抽出 |
+
+Claude Code 向けの詳細な動作指針は `second-brain/CLAUDE.md` に記載されています。
+
+### 方法 2: VSCode 拡張機能（GUI）
+
+「Second Brain」拡張機能をインストールすると、コマンドパレットやパネルで操作できます。
+
+インストール:
+
+```powershell
+cd vscode-extension
+npm install
+npm run compile
+npx @vscode/vsce package          # second-brain-x.y.z.vsix を生成
+code --install-extension second-brain-0.1.0.vsix
+```
+
+VSCode を再読み込み（`Developer: Reload Window`）すると有効になります。
+
+- コマンドパレット（`Ctrl+Shift+P`）→「Second Brain: メモ / リサーチ / 検索 …」
+- 会話は横の **チャットパネル**、保存はパネルの「保存」ボタン
+- タスクはサイドバーの **「Second Brain タスク」パネル**
+
+### 方法 3: CLI（土台）
+
+エンジンを直接コマンドで操作します。上の 2 つも内部でこの CLI を使っています。
+
+```powershell
+.venv\Scripts\python.exe cli.py <サブコマンド>
+```
+
+| サブコマンド | 機能 |
+|---|---|
+| `sync` / `status` | GitHub 同期 / 状態表示 |
+| `search <query>` | 意味検索 |
+| `index` | ChromaDB を再構築 |
+| `fetch-url <url>` / `fetch-youtube <url>` | 記事 / 字幕の取得 |
+| `memo｜link｜research｜planning｜chat <input>` | 会話セッションを開始 |
+| `continue <id> <msg>` / `save <id>` / `permanent <id>` / `discard <id>` | セッション操作 |
+| `sessions` / `session <id>` | セッション一覧 / 詳細 |
+| `task add｜list｜show｜update｜done` | タスク（GitHub Issue / Projects v2） |
+
+---
+
+## ノートの種類と保存先（ボルト内）
+
+- `00-inbox/` 生メモ
+- `10-notes/fleeting/` フリーティングノート / `10-notes/permanent/` 恒久（Atomic）ノート
+- `10-notes/literature/{articles,youtube}/` 文献ノート
+- `20-research/` 調査ノート / `30-planning/` 企画ノート
+
+ノートは `ZK-YYYYMMDD-HHMMSS.md` 形式。YAML フロントマター + Markdown 本文。
+
+## タスク管理
+
+タスクは **GitHub Issue が実体**、**Projects v2 ボードがビュー**です。
+`/task` または `cli.py task` で作成・一覧・更新します。`--note <ZK-id>` を付けると、
+Issue とノートが双方向にリンクされます（ノートの frontmatter `tasks:` に Issue 番号）。
 
 ## アーキテクチャ
 
 ```
-Discord
-  └── bot.py (discord.py 2.x, slash commands + on_message followup)
-        ├── handlers/
-        │     ├── memo.py      — /memo
-        │     ├── link.py      — /link (記事 + YouTube)
-        │     ├── research.py  — /research
-        │     ├── planning.py  — /planning
-        │     ├── search.py    — /search
-        │     └── chat.py      — /chat
-        └── services/
-              ├── claude_client.py    — Claude API (web_search_20250305)
-              ├── github_client.py    — ノートのGitHub保存 (5分TTLキャッシュ)
-              ├── knowledge_store.py  — ChromaDB意味検索
-              ├── scraper.py          — 記事スクレイピング
-              └── youtube_client.py   — 字幕取得 → Whisperフォールバック
-```
-
-**Web検索:** Anthropic公式の `web_search_20250305` ツール（Claude.aiと同じ検索エンジン）を使用。APIキー不要。
-
-**ノートID:** `ZK-20260504-143022` 形式（Zettelkasten準拠）
-
-**GitHub構造:**
-```
-second-brain/
-  00-inbox/           — 生メモ（/memo実行時に自動コミット）
-  10-notes/
-    fleeting/         — /memo, /chat 保存先
-    literature/
-      articles/       — /link 記事
-      youtube/        — /link YouTube
-    permanent/        — /memo の Permanent化
-  20-research/        — /research
-  30-planning/        — /planning
-  _config/
-    system-prompt.md  — Claudeの基本人格
-    prompts/          — コマンドごとの振る舞い指示
-    user-profile.md   — ユーザー設定（5分以内に反映）
-  _templates/         — ノートテンプレート
-```
-
-## セットアップ
-
-### 前提条件
-
-- Python 3.11+
-- ffmpeg（YouTube Whisper書き起こしに必要）
-- Discord Bot（Message Content Intent 有効化済み）
-- Anthropic API key
-- GitHub PAT（`repo` スコープ）+ private リポジトリ
-
-### インストール
-
-```powershell
-git clone <this-repo>
-cd discord-second-brain
-
-python -m venv .venv
-.venv\Scripts\activate
-
-pip install -r requirements.txt
-```
-
-### 環境変数の設定
-
-```powershell
-copy .env.example .env
-```
-
-`.env` を編集して各値を入力：
-
-```
-DISCORD_TOKEN=         # BotトークンDISCORD_GUILD_ID=       # サーバーID（右クリック→IDをコピー）
-ANTHROPIC_API_KEY=     # Anthropic Console から取得
-GITHUB_TOKEN=          # PAT（repoスコープ）
-GITHUB_REPO=username/second-brain
-CHROMA_DB_PATH=./chroma_db
-TAVILY_API_KEY=        # 任意。未設定でもAnthropic Web Searchで動作
-```
-
-### GitHub リポジトリの初期化
-
-GitHubで `second-brain` プライベートリポジトリを作成し、以下のフォルダを `.gitkeep` で初期化：
-
-```
-00-inbox/
-10-notes/fleeting/
-10-notes/literature/articles/
-10-notes/literature/youtube/
-10-notes/permanent/
-20-research/
-30-planning/
-```
-
-### プロンプト・テンプレートをプッシュ
-
-```powershell
-python update_all_content.py
-```
-
-これで `_config/` と `_templates/` の全ファイルがGitHubにコミットされます。
-
-### 起動
-
-```powershell
-python bot.py
-```
-
-初回起動時はChromaDB埋め込みモデル（約420MB）がダウンロードされます。
-
-## カスタマイズ
-
-GitHub上の `_config/user-profile.md` を編集すると、Claudeの振る舞い（呼び名・話し方・興味分野など）をカスタマイズできます。変更は最大5分以内に自動反映されます（再起動不要）。
-
-```yaml
-## 基本情報
-- 呼び名: shiki
-- 話しかけ方: タメ口でフランクに
-
-## 興味・専門分野
-- VTuber・配信文化
-- AI・機械学習
+VSCode
+  ├─ Claude Code（second-brain/.claude/commands）─┐
+  └─ VSCode 拡張機能（vscode-extension）──────────┤
+                                                  ▼
+              常駐デーモン daemon.py（localhost:8765）
+                - ChromaDB + 埋め込みモデル（ウォーム保持）
+                - セッション永続化 / Git 同期ガード
+                - スクレイピング / YouTube 書き起こし
+                - Claude API（拡張機能モードの会話）
+                                                  ▼
+                 second-brain ボルト（ローカル git）⇄ GitHub
 ```
 
 ## 主要な依存パッケージ
 
 | パッケージ | 用途 |
 |---|---|
-| `discord.py` | Discord Bot フレームワーク |
-| `anthropic` | Claude API（Web検索ツール付き）|
-| `PyGitHub` | GitHubへのノート保存 |
-| `chromadb` | ベクトルDBによる意味検索 |
-| `sentence-transformers` | 多言語埋め込みモデル |
+| `anthropic` | Claude API（拡張機能モードの会話）|
+| `chromadb` + `sentence-transformers` | 意味検索（多言語埋め込み）|
+| `PyGitHub` | タスク管理（GitHub Issues）|
 | `trafilatura` | 記事スクレイピング |
-| `youtube-transcript-api` | YouTube字幕取得（高速パス）|
-| `yt-dlp` + `faster-whisper` | 字幕なし動画のWhisper書き起こし |
+| `youtube-transcript-api` | YouTube 字幕取得（高速パス）|
+| `yt-dlp` + `faster-whisper` | 字幕なし動画の書き起こし |
+
+前提ソフトや別 PC でのセットアップ手順は [SETUP.md](SETUP.md) を参照してください。
