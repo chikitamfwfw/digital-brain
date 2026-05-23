@@ -145,8 +145,10 @@ class GitHubTasks:
     def ensure_project(self) -> dict | None:
         """Projects v2 ボードを取得（無ければ作成）し、Status フィールド情報を返す。
 
-        GITHUB_PROJECT_NUMBER が設定されていればその番号のボードを使う。
-        失敗時は None を返す（Issue 運用は継続できる）。
+        探索順: GITHUB_PROJECT_NUMBER → 同名 Project（最古を採用） → 新規作成。
+        2 段階目のタイトル検索により、番号未設定でも既存ボードを再利用でき、
+        デーモン起動のたびに空ボードを量産する不具合を防ぐ。失敗時は None を
+        返す（Issue 運用は継続できる）。
         """
         if self._project_cache is not None:
             return self._project_cache
@@ -162,7 +164,10 @@ class GitHubTasks:
                 holder = data.get("user") or data.get("organization") or {}
                 project = holder.get("projectV2")
             if project is None:
-                # ボードを新規作成
+                # 番号未設定/誤指定でも、同名の既存 Project があれば再利用する。
+                project = self._find_project_by_title(config.GITHUB_PROJECT_TITLE)
+            if project is None:
+                # それでも見つからなければ新規作成。
                 created = self._gql(
                     "mutation($o:ID!,$t:String!){ createProjectV2(input:{ownerId:$o,title:$t})"
                     "{ projectV2{ id title number } } }",
@@ -179,6 +184,31 @@ class GitHubTasks:
         except GitHubError as e:
             print(f"[github_tasks] Projects v2 連携をスキップ: {e}")
             return None
+
+    def _find_project_by_title(self, title: str) -> dict | None:
+        """ユーザー/Org の Projects から指定タイトルの非クローズ Project を探す。
+
+        複数あれば番号が最小（＝最古）のものを返す。
+        """
+        data = self._gql(
+            "query($l:String!){ "
+            "user(login:$l){ projectsV2(first:50){ nodes{ id title number closed } } } "
+            "organization(login:$l){ projectsV2(first:50){ nodes{ id title number closed } } } "
+            "}",
+            {"l": self.owner},
+        )
+        candidates: list[dict] = []
+        for holder_key in ("user", "organization"):
+            holder = data.get(holder_key) or {}
+            nodes = (holder.get("projectsV2") or {}).get("nodes") or []
+            for n in nodes:
+                if n and n.get("title") == title and not n.get("closed"):
+                    candidates.append(n)
+        if not candidates:
+            return None
+        candidates.sort(key=lambda n: n["number"])
+        n = candidates[0]
+        return {"id": n["id"], "title": n["title"], "number": n["number"]}
 
     def _status_field(self, project_id: str) -> dict:
         data = self._gql(
