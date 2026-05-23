@@ -24,10 +24,12 @@ STATUS_VALUES = ("Todo", "In Progress", "Done")
 PRIORITY_VALUES = ("高", "中", "低")
 
 # Projects v2 に用意するカスタムフィールド（名前 → データ型）
+# 工数は単位ごと（時間/日）に独立した数値フィールドを持つ。
 _CUSTOM_FIELD_TYPES = {
     "案件": "TEXT",
     "期日": "DATE",
-    "工数": "NUMBER",
+    "工数(時間)": "NUMBER",
+    "工数(日)": "NUMBER",
     "優先度": "SINGLE_SELECT",
 }
 
@@ -195,6 +197,13 @@ class GitHubTasks:
         戻り値: {フィールド名: {"id": str, "options": {選択肢名: ID}}}。
         """
         existing = self._list_fields(project_id)
+        # 旧フィールド「工数」を「工数(時間)」へリネーム（既定単位を時間として継承）。
+        if "工数" in existing and "工数(時間)" not in existing:
+            try:
+                self._rename_field(existing["工数"]["id"], "工数(時間)")
+                existing = self._list_fields(project_id)
+            except GitHubError as e:
+                print(f"[github_tasks] 工数→工数(時間) のリネームに失敗: {e}")
         out: dict = {}
         for name, dtype in _CUSTOM_FIELD_TYPES.items():
             if name in existing:
@@ -207,6 +216,13 @@ class GitHubTasks:
             except GitHubError as e:
                 print(f"[github_tasks] フィールド作成をスキップ ({name}): {e}")
         return out
+
+    def _rename_field(self, field_id: str, new_name: str) -> None:
+        self._gql(
+            "mutation($f:ID!,$n:String!){ updateProjectV2Field(input:{fieldId:$f,"
+            "name:$n}){ projectV2Field{ ... on ProjectV2FieldCommon { id name } } } }",
+            {"f": field_id, "n": new_name},
+        )
 
     def _list_fields(self, project_id: str) -> dict:
         data = self._gql(
@@ -289,7 +305,9 @@ class GitHubTasks:
             "... on ProjectV2ItemFieldDateValue { date } } "
             'yusen: fieldValueByName(name:"優先度"){ '
             "... on ProjectV2ItemFieldSingleSelectValue { name } } "
-            'kosu: fieldValueByName(name:"工数"){ '
+            'kosuH: fieldValueByName(name:"工数(時間)"){ '
+            "... on ProjectV2ItemFieldNumberValue { number } } "
+            'kosuD: fieldValueByName(name:"工数(日)"){ '
             "... on ProjectV2ItemFieldNumberValue { number } } } } } } }",
             {"p": project_id},
         )
@@ -306,7 +324,8 @@ class GitHubTasks:
                 "案件": (n.get("anken") or {}).get("text"),
                 "期日": (n.get("kijitsu") or {}).get("date"),
                 "優先度": (n.get("yusen") or {}).get("name"),
-                "工数": (n.get("kosu") or {}).get("number"),
+                "工数(時間)": (n.get("kosuH") or {}).get("number"),
+                "工数(日)": (n.get("kosuD") or {}).get("number"),
             })
         return out
 

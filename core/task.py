@@ -55,7 +55,8 @@ class TaskService:
         item_id: str,
         anken: str | None = None,
         due: str | None = None,
-        effort: float | None = None,
+        effort_hours: float | None = None,
+        effort_days: float | None = None,
         priority: str | None = None,
     ) -> list[str]:
         """ボード項目にカスタムフィールド値を設定する（best-effort）。
@@ -68,9 +69,20 @@ class TaskService:
             specs.append(("案件", fields["案件"]["id"], {"text": str(anken)}))
         if due is not None and "期日" in fields:
             specs.append(("期日", fields["期日"]["id"], {"date": str(due)}))
-        if effort is not None and "工数" in fields:
+        if effort_hours is not None and "工数(時間)" in fields:
             try:
-                specs.append(("工数", fields["工数"]["id"], {"number": float(effort)}))
+                specs.append((
+                    "工数(時間)", fields["工数(時間)"]["id"],
+                    {"number": float(effort_hours)},
+                ))
+            except (TypeError, ValueError):
+                pass
+        if effort_days is not None and "工数(日)" in fields:
+            try:
+                specs.append((
+                    "工数(日)", fields["工数(日)"]["id"],
+                    {"number": float(effort_days)},
+                ))
             except (TypeError, ValueError):
                 pass
         if priority is not None and "優先度" in fields:
@@ -99,13 +111,15 @@ class TaskService:
         note: str | None = None,
         labels: list[str] | None = None,
         due: str | None = None,
-        effort: float | None = None,
+        effort_hours: float | None = None,
+        effort_days: float | None = None,
         priority: str | None = None,
     ) -> dict:
         """タスク（Issue）を作成し、ボードに登録して各フィールドを設定する。
 
         - ``project``: 案件名（ボードの「案件」フィールド + Issue 本文）。
-        - ``due``: 期日（YYYY-MM-DD）。``effort``: 工数（数値）。
+        - ``due``: 期日（YYYY-MM-DD）。
+        - ``effort_hours`` / ``effort_days``: 工数を時間 or 日数の数値で（両方可）。
         - ``priority``: 優先度（高 / 中 / 低）。
         - ``note``: 紐づける ZK ノートの ID/パス（Issue 本文 + ノートへ逆リンク）。
         """
@@ -116,8 +130,10 @@ class TaskService:
             lines.append(f"**期日:** {due}")
         if priority:
             lines.append(f"**優先度:** {priority}")
-        if effort is not None:
-            lines.append(f"**工数:** {effort}")
+        if effort_hours is not None:
+            lines.append(f"**工数(時間):** {effort_hours}")
+        if effort_days is not None:
+            lines.append(f"**工数(日):** {effort_days}")
         if note:
             lines.append(f"**関連ノート:** {note}")
         full_body = "\n".join(lines).strip()
@@ -137,7 +153,8 @@ class TaskService:
                         self.gh.set_status(proj["id"], item_id, field_id, option_id)
                     applied_fields = self._apply_fields(
                         proj, item_id, anken=project, due=due,
-                        effort=effort, priority=priority,
+                        effort_hours=effort_hours, effort_days=effort_days,
+                        priority=priority,
                     )
                     board = True
             except GitHubError as e:
@@ -165,7 +182,8 @@ class TaskService:
             "on_board": board,
             "案件": project,
             "期日": due,
-            "工数": effort,
+            "工数(時間)": effort_hours,
+            "工数(日)": effort_days,
             "優先度": priority,
             "fields_applied": applied_fields,
             "linked_note": linked_note,
@@ -206,7 +224,8 @@ class TaskService:
                 "案件": bi.get("案件"),
                 "期日": bi.get("期日"),
                 "優先度": bi.get("優先度"),
-                "工数": bi.get("工数"),
+                "工数(時間)": bi.get("工数(時間)"),
+                "工数(日)": bi.get("工数(日)"),
             })
         return out
 
@@ -225,7 +244,7 @@ class TaskService:
         issue["board_status"] = bi.get("status") or (
             "Done" if issue["state"] == "closed" else "Todo"
         )
-        for key in ("案件", "期日", "優先度", "工数"):
+        for key in ("案件", "期日", "優先度", "工数(時間)", "工数(日)"):
             issue[key] = bi.get(key)
         return issue
 
@@ -235,7 +254,8 @@ class TaskService:
         status: str | None = None,
         project: str | None = None,
         due: str | None = None,
-        effort: float | None = None,
+        effort_hours: float | None = None,
+        effort_days: float | None = None,
         priority: str | None = None,
     ) -> dict:
         """タスクの Status / カスタムフィールドを更新する。
@@ -254,14 +274,15 @@ class TaskService:
                 self.gh.update_issue(number, state="open")
 
         applied: list[str] = []
-        if any(v is not None for v in (project, due, effort, priority)):
+        if any(v is not None for v in (project, due, effort_hours, effort_days, priority)):
             proj = self.gh.ensure_project()
             if proj:
                 item_id = self._find_item_id(proj, number)
                 if item_id:
                     applied = self._apply_fields(
                         proj, item_id, anken=project, due=due,
-                        effort=effort, priority=priority,
+                        effort_hours=effort_hours, effort_days=effort_days,
+                        priority=priority,
                     )
         return {
             "number": number,

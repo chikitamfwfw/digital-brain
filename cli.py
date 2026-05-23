@@ -133,7 +133,8 @@ def main(argv: list[str] | None = None) -> int:
     ta.add_argument("--note", default=None, help="紐づける ZK ノートの ID/パス")
     ta.add_argument("--label", action="append", default=[])
     ta.add_argument("--due", default=None, help="期日（YYYY-MM-DD）")
-    ta.add_argument("--effort", type=float, default=None, help="工数（数値）")
+    ta.add_argument("--effort-hours", type=float, default=None, help="工数（時間）")
+    ta.add_argument("--effort-days", type=float, default=None, help="工数（日）")
     ta.add_argument("--priority", choices=["高", "中", "低"], default=None, help="優先度")
     tl = tsub.add_parser("list", help="タスク一覧")
     tl.add_argument("--status", choices=["Todo", "In Progress", "Done"], default=None)
@@ -147,7 +148,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     tu.add_argument("--project", default=None, help="案件名")
     tu.add_argument("--due", default=None, help="期日（YYYY-MM-DD）")
-    tu.add_argument("--effort", type=float, default=None, help="工数（数値）")
+    tu.add_argument("--effort-hours", type=float, default=None, help="工数（時間）")
+    tu.add_argument("--effort-days", type=float, default=None, help="工数（日）")
     tu.add_argument("--priority", choices=["高", "中", "低"], default=None, help="優先度")
     td = tsub.add_parser("done", help="タスクを完了")
     td.add_argument("number", type=int)
@@ -200,7 +202,10 @@ def main(argv: list[str] | None = None) -> int:
             _print(_call("POST", "/task/add", {
                 "title": args.title, "body": args.body, "project": args.project,
                 "note": args.note, "labels": args.label,
-                "due": args.due, "effort": args.effort, "priority": args.priority,
+                "due": args.due,
+                "effort_hours": args.effort_hours,
+                "effort_days": args.effort_days,
+                "priority": args.priority,
             }))
         elif tc == "list":
             res = _call("POST", "/task/list", {"status": args.status, "project": args.project})
@@ -212,6 +217,10 @@ def main(argv: list[str] | None = None) -> int:
                     extras.append(f"期日:{t['期日']}")
                 if t.get("案件"):
                     extras.append(f"案件:{t['案件']}")
+                if t.get("工数(時間)") is not None:
+                    extras.append(f"工数:{t['工数(時間)']}h")
+                if t.get("工数(日)") is not None:
+                    extras.append(f"工数:{t['工数(日)']}d")
                 tail = ("  " + " ".join(extras)) if extras else ""
                 print(f"#{t['number']}  [{t.get('board_status', '?')}]  {t['title']}{tail}  {t['url']}")
         elif tc == "show":
@@ -220,7 +229,9 @@ def main(argv: list[str] | None = None) -> int:
             _print(_call("POST", "/task/update", {
                 "number": args.number, "status": args.status,
                 "project": args.project, "due": args.due,
-                "effort": args.effort, "priority": args.priority,
+                "effort_hours": args.effort_hours,
+                "effort_days": args.effort_days,
+                "priority": args.priority,
             }))
         elif tc == "done":
             _print(_call("POST", "/task/done", {"number": args.number}))
