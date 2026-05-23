@@ -69,7 +69,7 @@ class GitHubTasks:
         except urllib.error.HTTPError as e:
             raise GitHubError(f"GitHub REST {method} {path}: {e.code} {e.read().decode('utf-8', 'ignore')}") from e
 
-    def _gql(self, query: str, variables: dict) -> dict:
+    def _gql(self, query: str, variables: dict, partial_ok: bool = False) -> dict:
         body = json.dumps({"query": query, "variables": variables}).encode("utf-8")
         req = urllib.request.Request(_GQL, data=body, method="POST", headers=self._headers())
         try:
@@ -78,8 +78,14 @@ class GitHubTasks:
         except urllib.error.HTTPError as e:
             raise GitHubError(f"GitHub GraphQL: {e.code} {e.read().decode('utf-8', 'ignore')}") from e
         if payload.get("errors"):
-            raise GitHubError(f"GitHub GraphQL: {payload['errors']}")
-        return payload["data"]
+            # partial_ok=True のとき: データが返っていれば errors を警告に留め続行する
+            # (organization が存在しないユーザーアカウントで user/org 両方を同時に
+            # 問い合わせると NOT_FOUND が errors に入るが data.user は有効)
+            if partial_ok and payload.get("data") is not None:
+                print(f"[github_tasks] GraphQL partial errors (ignored): {payload['errors']}")
+            else:
+                raise GitHubError(f"GitHub GraphQL: {payload['errors']}")
+        return payload.get("data") or {}
 
     # ── Issues（タスクの実体） ──────────────────────────────────────────────
     def create_issue(self, title: str, body: str = "", labels: list[str] | None = None) -> dict:
@@ -160,6 +166,7 @@ class GitHubTasks:
                     "query($l:String!,$n:Int!){ user(login:$l){ projectV2(number:$n){ id title } } "
                     "organization(login:$l){ projectV2(number:$n){ id title } } }",
                     {"l": self.owner, "n": number},
+                    partial_ok=True,
                 )
                 holder = data.get("user") or data.get("organization") or {}
                 project = holder.get("projectV2")
@@ -196,6 +203,7 @@ class GitHubTasks:
             "organization(login:$l){ projectsV2(first:50){ nodes{ id title number closed } } } "
             "}",
             {"l": self.owner},
+            partial_ok=True,
         )
         candidates: list[dict] = []
         for holder_key in ("user", "organization"):

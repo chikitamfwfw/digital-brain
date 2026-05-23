@@ -1,0 +1,7 @@
+* text=auto
+
+# シェルスクリプトは Mac/Linux で LF 必須（Windows でクローンしても LF を維持）
+*.sh text eol=lf
+
+# PowerShell スクリプトは CRLF が無難
+*.ps1 text eol=crlf
