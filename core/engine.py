@@ -107,16 +107,51 @@ class Engine:
 
     # ── コンテンツ取得 ──────────────────────────────────────────────────────
     def fetch_url(self, url: str) -> dict:
-        from services.scraper import fetch_article
+        from services.newspicks_client import is_newspicks_video_url
+
+        # NewsPicks の会員制動画: 音声を Whisper で文字起こしして返す。
+        # （Claude Code の /link が呼ぶ fetch-url からも動画対応を行うため。）
+        if is_newspicks_video_url(url):
+            v = self.fetch_newspicks_video(url)
+            transcript = v.get("transcript") or ""
+            description = v.get("description") or ""
+            if transcript:
+                text = (
+                    f"{description}\n\n## 書き起こし全文（音声からAI文字起こし）\n\n"
+                    f"{transcript}"
+                ).strip()
+            else:
+                text = description
+            return {
+                "url": v["url"],
+                "title": v["title"],
+                "text": text,
+                "is_paywall": not text,
+                "page_count": 1,
+                "images": [],
+                "image_paths": [],
+                "transcript": transcript,
+                "method": v.get("method", "unavailable"),
+                "kind": "newspicks-video",
+            }
+
+        from services.scraper import fetch_article, download_images_to_dir
 
         result = asyncio.run(fetch_article(url))
+        # 図解記事（本文が画像）: 図解パネル画像をローカルに展開し、Claude Code が
+        # Read ツールで読めるようにする。
+        image_paths: list[str] = []
+        if result.images:
+            image_paths = asyncio.run(download_images_to_dir(result.images))
         return {
             "url": result.url,
             "title": result.title,
             "text": result.text,
             "is_paywall": result.is_paywall,
             "page_count": result.page_count,
-            "images": result.images,
+            "images": result.images,       # URL 群（API 添付用）
+            "image_paths": image_paths,    # ローカルパス（Claude Code が Read で読む）
+            "kind": "newspicks-figure" if result.images else "article",
         }
 
     def fetch_youtube(self, url: str) -> dict:

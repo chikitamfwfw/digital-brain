@@ -3,6 +3,7 @@ import base64
 import http.cookiejar
 import os
 import re
+import tempfile
 import aiohttp
 from dataclasses import dataclass, field
 from urllib.parse import urljoin, urlparse
@@ -203,6 +204,47 @@ def _newspicks_figure_images(html: str, article_id: str) -> list[str]:
         webp = [u for u in urls if "WEBP" in u.upper()]
         out.append(webp[0] if webp else urls[0])
     return out
+
+
+async def download_images_to_dir(
+    urls: list[str], out_dir: str | None = None, limit: int = 20
+) -> list[str]:
+    """画像URL群をダウンロードしてディレクトリに保存し、ローカルパスを返す。
+
+    Claude Code モードで Read ツールに渡せるよう、図解パネル等を一時ディレクトリに
+    展開する用途。会員制画像にも対応するためドメイン一致 Cookie を付与する。
+    """
+    if out_dir is None:
+        out_dir = tempfile.mkdtemp(prefix="np_figures_")
+    os.makedirs(out_dir, exist_ok=True)
+    extensions = {"image/jpeg": ".jpg", "image/png": ".png",
+                  "image/gif": ".gif", "image/webp": ".webp"}
+    paths: list[str] = []
+    async with aiohttp.ClientSession(headers=HEADERS) as session:
+        for i, url in enumerate(urls[:limit]):
+            try:
+                async with session.get(
+                    url,
+                    cookies=_cookies_for_url(url),
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as resp:
+                    if resp.status != 200:
+                        continue
+                    ctype = (
+                        resp.headers.get("Content-Type", "")
+                        .split(";")[0].strip().lower()
+                    )
+                    ext = extensions.get(ctype)
+                    if not ext:
+                        continue
+                    data = await resp.read()
+            except Exception:
+                continue
+            path = os.path.join(out_dir, f"panel_{i:02d}{ext}")
+            with open(path, "wb") as f:
+                f.write(data)
+            paths.append(path)
+    return paths
 
 
 async def download_images_as_blocks(urls: list[str], limit: int = 20) -> list[dict]:
