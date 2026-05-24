@@ -12,12 +12,13 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import config
 from services.vault import Vault, ConflictError, GitError
 from session.manager import Session, SessionStore
-from services.indexer import index_vault
+from services.indexer import index_note_file, index_vault, note_id_from_path
 from utils.formatters import (
     make_zk_id,
     make_zk_filename,
@@ -90,7 +91,39 @@ class Engine:
 
     # ── 同期・状態 ──────────────────────────────────────────────────────────
     def sync(self) -> dict:
-        return self.vault.sync()
+        """ボルトを Git 同期し、差分のあったノートを ChromaDB にも反映する。
+
+        last_indexed_commit ファイルで「どこまでインデックスに取り込んだか」を
+        記録しておき、次回 sync 時はそれ以降の差分だけを処理する。初回
+        （ファイル無し）またはインデックスが空のときは全件再構築する。
+        """
+        result = self.vault.sync()
+        post_head = self.vault.head_sha()
+
+        last_indexed = self._read_last_indexed_commit()
+        indexed_added, indexed_removed = 0, 0
+        try:
+            if not last_indexed or self.knowledge.count() == 0:
+                # 初回 or インデックス空: 全件再構築
+                indexed_added = index_vault(self.vault, self.knowledge)
+            else:
+                # 差分のみ反映
+                for status, rel_path in self.vault.diff_notes(last_indexed, post_head):
+                    if status in ("A", "M"):
+                        if index_note_file(self.vault, rel_path, self.knowledge):
+                            indexed_added += 1
+                    elif status == "D":
+                        note_id = note_id_from_path(rel_path)
+                        if note_id:
+                            self.knowledge.delete_note(note_id)
+                            indexed_removed += 1
+            self._write_last_indexed_commit(post_head)
+        except Exception as e:  # noqa: BLE001 - インデックス更新は best-effort
+            print(f"[engine] sync 後のインデックス更新をスキップ: {e}")
+
+        result["indexed_added"] = indexed_added
+        result["indexed_removed"] = indexed_removed
+        return result
 
     def status(self) -> dict:
         st = self.vault.status()
@@ -99,7 +132,30 @@ class Engine:
         return st
 
     def index(self) -> int:
-        return index_vault(self.vault, self.knowledge)
+        count = index_vault(self.vault, self.knowledge)
+        # 全件再構築後は、現在の HEAD を「ここまで取り込み済み」として記録。
+        try:
+            self._write_last_indexed_commit(self.vault.head_sha())
+        except GitError:
+            pass
+        return count
+
+    # ── 差分インデックスの進捗マーカ管理 ───────────────────────────────────
+    def _state_dir(self) -> Path:
+        d = Path(__file__).resolve().parent.parent / ".brain"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def _read_last_indexed_commit(self) -> str:
+        f = self._state_dir() / "last_indexed_commit"
+        try:
+            return f.read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
+
+    def _write_last_indexed_commit(self, sha: str) -> None:
+        f = self._state_dir() / "last_indexed_commit"
+        f.write_text(sha, encoding="utf-8")
 
     # ── 検索 ────────────────────────────────────────────────────────────────
     def search(self, query: str, n_results: int = 5) -> list[dict]:

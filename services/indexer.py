@@ -54,6 +54,37 @@ def _parse_tags(raw: str) -> list[str]:
     return [t.strip().strip("'\"") for t in raw.split(",") if t.strip()]
 
 
+def index_note_file(vault: Vault, rel_path: str, knowledge: KnowledgeStore) -> bool:
+    """単一ノートを ChromaDB に upsert する。成功なら True。"""
+    path = vault.root / rel_path
+    if not path.is_file():
+        return False
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    fm = _parse_frontmatter(content)
+    note_id = fm.get("id", "")
+    if not note_id:
+        return False
+    knowledge.add_note(
+        note_id=note_id,
+        content=content,
+        command=_TYPE_TO_COMMAND.get(fm.get("type", ""), "memo"),
+        file_path=rel_path.replace("\\", "/"),
+        tags=_parse_tags(fm.get("tags", "")),
+    )
+    return True
+
+
+def note_id_from_path(rel_path: str) -> str | None:
+    """ファイル名から note_id を導出する（ZK-YYYYMMDD-HHMMSS 形式のみ）。"""
+    name = rel_path.replace("\\", "/").rsplit("/", 1)[-1]
+    if name.endswith(".md"):
+        name = name[:-3]
+    return name if name.startswith("ZK-") else None
+
+
 def index_vault(vault: Vault, knowledge: KnowledgeStore) -> int:
     """ローカルボルトの全ノートを ChromaDB に upsert する。処理件数を返す。"""
     total = 0
@@ -62,20 +93,7 @@ def index_vault(vault: Vault, knowledge: KnowledgeStore) -> int:
         if not dir_path.is_dir():
             continue
         for path in sorted(dir_path.glob("*.md")):
-            try:
-                content = path.read_text(encoding="utf-8")
-            except OSError:
-                continue
-            fm = _parse_frontmatter(content)
-            note_id = fm.get("id", "")
-            if not note_id:
-                continue
-            knowledge.add_note(
-                note_id=note_id,
-                content=content,
-                command=_TYPE_TO_COMMAND.get(fm.get("type", ""), "memo"),
-                file_path=str(path.relative_to(vault.root)),
-                tags=_parse_tags(fm.get("tags", "")),
-            )
-            total += 1
+            rel = str(path.relative_to(vault.root)).replace("\\", "/")
+            if index_note_file(vault, rel, knowledge):
+                total += 1
     return total

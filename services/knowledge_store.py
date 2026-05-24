@@ -75,3 +75,10 @@ class KnowledgeStore:
 
     def count(self) -> int:
         return self._collection.count()
+
+    def delete_note(self, note_id: str) -> None:
+        """指定 ID のノートを索引から削除する（存在しない場合は無視）。"""
+        try:
+            self._collection.delete(ids=[note_id])
+        except Exception:  # noqa: BLE001 - 削除失敗は致命傷ではない
+            pass

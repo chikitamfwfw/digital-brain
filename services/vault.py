@@ -119,6 +119,44 @@ class Vault:
     def current_branch(self) -> str:
         return self._git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
 
+    def head_sha(self) -> str:
+        return self._git("rev-parse", "HEAD").stdout.strip()
+
+    def diff_notes(self, base: str, head: str) -> list[tuple[str, str]]:
+        """ノートディレクトリ配下の .md 変更を [(status, rel_path)] で返す。
+
+        status: 'A' / 'M' / 'D' / 'R'（リネームは旧パスを D、新パスを A として分解）。
+        """
+        if not base or not head or base == head:
+            return []
+        out = self._git(
+            "diff", "--name-status", f"{base}..{head}", check=False
+        ).stdout
+        if not out:
+            return []
+        changes: list[tuple[str, str]] = []
+        for line in out.splitlines():
+            parts = line.split("\t")
+            if len(parts) < 2:
+                continue
+            status_char = parts[0][0]
+            if status_char == "R" and len(parts) >= 3:
+                old_path, new_path = parts[1], parts[2]
+                if self._is_note_path(old_path):
+                    changes.append(("D", old_path))
+                if self._is_note_path(new_path):
+                    changes.append(("A", new_path))
+            else:
+                path = parts[-1]
+                if self._is_note_path(path):
+                    changes.append((status_char, path))
+        return changes
+
+    def _is_note_path(self, path: str) -> bool:
+        if not path.endswith(".md"):
+            return False
+        return any(path.startswith(d + "/") for d in _NOTE_DIRS)
+
     def _has_changes(self) -> bool:
         return bool(self._git("status", "--porcelain").stdout.strip())
 
