@@ -29,18 +29,18 @@ if ! command -v ffmpeg >/dev/null 2>&1; then
     echo ""
 fi
 
-echo "[1/3] Python 仮想環境 (.venv) を作成..."
+echo "[1/4] Python 仮想環境 (.venv) を作成..."
 if [ ! -d ".venv" ]; then
     "$PY" -m venv .venv
 else
     echo "  .venv は既に存在します（スキップ）。"
 fi
 
-echo "[2/3] 依存パッケージをインストール（数分かかります）..."
+echo "[2/4] 依存パッケージをインストール（数分かかります）..."
 ./.venv/bin/python -m pip install --upgrade pip
 ./.venv/bin/python -m pip install -r requirements.txt
 
-echo "[3/3] .env を準備..."
+echo "[3/4] .env を準備..."
 if [ ! -f ".env" ]; then
     cp .env.example .env
     echo "  .env を作成しました。"
@@ -48,6 +48,24 @@ if [ ! -f ".env" ]; then
 else
     echo "  .env は既に存在します（スキップ）。"
 fi
+
+echo "[4/4] 親フォルダのワークスペース（CLAUDE.md と .claude/commands/）を展開..."
+PARENT="$(cd .. && pwd)"
+if [ ! -e "$PARENT/CLAUDE.md" ]; then
+    cp templates/workspace/CLAUDE.md "$PARENT/CLAUDE.md"
+    echo "  $PARENT/CLAUDE.md を作成"
+else
+    echo "  $PARENT/CLAUDE.md は既に存在（スキップ）"
+fi
+mkdir -p "$PARENT/.claude/commands"
+for f in templates/workspace/.claude/commands/*.md; do
+    name=$(basename "$f")
+    if [ ! -e "$PARENT/.claude/commands/$name" ]; then
+        cp "$f" "$PARENT/.claude/commands/$name"
+        echo "  $PARENT/.claude/commands/$name を作成"
+    fi
+done
+echo "  → VSCode で親フォルダを開けば /memo /link /task 等が使えます。"
 
 echo ""
 echo "セットアップ完了。"

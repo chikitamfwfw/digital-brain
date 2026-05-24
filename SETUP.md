@@ -182,9 +182,18 @@ GitHub 経由では同期されないもの:
 
 ### Claude Code でスラッシュコマンドを使うとき
 
-このリポジトリのスラッシュコマンド本体は `second-brain/.claude/commands/` にあり、**GitHub 経由で同期されます**。Mac でも VSCode で `second-brain/` をワークスペースとして開けば `/memo` `/link` `/task` 等が即使えます。
+スラッシュコマンドの本体は `second-brain/.claude/commands/` にあり、**GitHub 経由で同期されます**。Mac でも、以下のどちらかでスラッシュコマンドが使えます:
 
-複数リポジトリを横断して使いたい場合（親フォルダを VSCode で開きたい場合）は、親フォルダに `CLAUDE.md` と `.claude/commands/` の薄い委譲ファイルが必要です。これは PC ごとに作成（Windows でも Mac でも同じ手順）。詳細は親フォルダの `CLAUDE.md` を参照。
+- **A. `second-brain/` だけ開く**: VSCode で second-brain フォルダを開けば即使えます（追加作業なし）。
+- **B. 親フォルダ（`genai/` 等）を開いて2リポジトリを横断**: 親フォルダにも `CLAUDE.md` と `.claude/commands/` の委譲ファイルが必要。**setup スクリプト（`setup.sh` / `setup.ps1`）が自動で展開** します（`digital-brain/templates/workspace/` から親フォルダにコピー、既存ファイルは保護）。
+
+setup を実行し直しても上書きされないので、Mac で B 構成にしたいときは:
+
+```bash
+cd digital-brain && bash setup.sh
+```
+
+を実行すれば `../CLAUDE.md` と `../.claude/commands/*.md` が自動で配置されます。
 
 ---
 
